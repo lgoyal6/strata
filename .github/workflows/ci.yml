@@ -1,0 +1,59 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [dev, release]
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build
+      - run: cmake --preset ${{ matrix.preset }}
+      - run: cmake --build --preset ${{ matrix.preset }}
+      - run: ctest --preset ${{ matrix.preset }}
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang-format
+      - run: |
+          find include src test tools fuzz bench -name '*.h' -o -name '*.cc' | \
+            xargs clang-format --dry-run --Werror
+
+  # The acceptance gate: >=10k randomized SIGKILL points across the full
+  # {fsync policy} x {kill mechanism} x {fresh, chained} matrix, zero
+  # acknowledged-write loss, no torn record accepted. crash_test exits
+  # nonzero on any violation.
+  crash-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build
+      - run: cmake --preset release && cmake --build --preset release
+      - run: |
+          set -euo pipefail
+          for mode in fresh chain; do
+            for kill in bytes timer; do
+              for fsync in always interval never; do
+                ./build/release/tools/crash_test orchestrate \
+                  --dir "${RUNNER_TEMP}/crash-$mode-$kill-$fsync" \
+                  --iters 850 --workers 4 \
+                  --fsync "$fsync" --mode "$mode" --kill "$kill" --seed 7
+              done
+            done
+          done
+
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build
+      - run: ./fuzz/run_fuzz.sh wal 60
+      - run: ./fuzz/run_fuzz.sh sstable 60
+      - run: ./fuzz/run_fuzz.sh manifest 30

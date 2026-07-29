@@ -1,0 +1,16 @@
+Checks: >
+  bugprone-*,
+  performance-*,
+  portability-*,
+  clang-analyzer-*,
+  misc-*,
+  modernize-*,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  -modernize-use-trailing-return-type,
+  -modernize-use-auto,
+  -modernize-use-nodiscard,
+  -modernize-avoid-c-arrays,
+  -bugprone-easily-swappable-parameters
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'include/strata/.*'

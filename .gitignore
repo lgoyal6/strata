@@ -1,0 +1,11 @@
+build/
+.cache/
+compile_commands.json
+*.o
+*.a
+.DS_Store
+fuzz/corpus/*/
+!fuzz/corpus/*/seed_*
+crash-*
+leak-*
+timeout-*
