@@ -1,0 +1,12 @@
+crash_test: mode=fresh kill=bytes fsync=always iters=1000 kills=871 clean_exits=129 acked_writes_verified=95821 failures=0
+crash_test: mode=fresh kill=bytes fsync=interval iters=1000 kills=852 clean_exits=148 acked_writes_verified=100128 failures=0
+crash_test: mode=fresh kill=bytes fsync=never iters=1000 kills=860 clean_exits=140 acked_writes_verified=100443 failures=0
+crash_test: mode=fresh kill=timer fsync=always iters=1000 kills=983 clean_exits=17 acked_writes_verified=186610 failures=0
+crash_test: mode=fresh kill=timer fsync=interval iters=1000 kills=919 clean_exits=81 acked_writes_verified=345111 failures=0
+crash_test: mode=fresh kill=timer fsync=never iters=1000 kills=911 clean_exits=89 acked_writes_verified=357666 failures=0
+crash_test: mode=chain kill=bytes fsync=always iters=1000 kills=974 clean_exits=26 acked_writes_verified=48749 failures=0
+crash_test: mode=chain kill=bytes fsync=interval iters=1000 kills=976 clean_exits=24 acked_writes_verified=49719 failures=0
+crash_test: mode=chain kill=bytes fsync=never iters=1000 kills=976 clean_exits=24 acked_writes_verified=49589 failures=0
+crash_test: mode=chain kill=timer fsync=always iters=1000 kills=992 clean_exits=8 acked_writes_verified=181438 failures=0
+crash_test: mode=chain kill=timer fsync=interval iters=1000 kills=918 clean_exits=82 acked_writes_verified=351790 failures=0
+crash_test: mode=chain kill=timer fsync=never iters=1000 kills=917 clean_exits=83 acked_writes_verified=356188 failures=0

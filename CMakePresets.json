@@ -1,0 +1,49 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "dev",
+            "displayName": "Debug + ASan/UBSan",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/dev",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "STRATA_SANITIZE": "address,undefined",
+                "STRATA_BUILD_TESTS": "ON",
+                "STRATA_BUILD_TOOLS": "ON"
+            }
+        },
+        {
+            "name": "dev-mac",
+            "displayName": "Debug + ASan/UBSan (brew LLVM; Apple clang's ASan runtime hangs at init on macOS 26)",
+            "inherits": "dev",
+            "binaryDir": "${sourceDir}/build/dev-mac",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release (benchmarks, crash matrix)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "STRATA_BUILD_TESTS": "ON",
+                "STRATA_BUILD_TOOLS": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "dev", "configurePreset": "dev" },
+        { "name": "dev-mac", "configurePreset": "dev-mac" },
+        { "name": "release", "configurePreset": "release" }
+    ],
+    "testPresets": [
+        { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
+        { "name": "dev-mac", "configurePreset": "dev-mac", "output": { "outputOnFailure": true } },
+        { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } }
+    ]
+}
