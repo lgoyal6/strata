@@ -1,0 +1,12 @@
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(WARNING "Fuzzers require clang (libFuzzer); skipping fuzz targets")
+    return()
+endif()
+
+foreach(target wal sstable manifest)
+    add_executable(fuzz_${target} fuzz_${target}.cc)
+    target_link_libraries(fuzz_${target} PRIVATE strata)
+    target_include_directories(fuzz_${target} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_options(fuzz_${target} PRIVATE -fsanitize=fuzzer)
+    target_link_options(fuzz_${target} PRIVATE -fsanitize=fuzzer)
+endforeach()
