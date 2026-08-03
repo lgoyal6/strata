@@ -10,7 +10,7 @@ jobs:
       matrix:
         preset: [dev, release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build
       - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build --preset ${{ matrix.preset }}
@@ -19,7 +19,7 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y clang-format
       - run: |
           find include src test tools fuzz bench -name '*.h' -o -name '*.cc' | \
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build
       - run: cmake --preset release && cmake --build --preset release
       - run: |
@@ -52,7 +52,7 @@ jobs:
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build
       - run: ./fuzz/run_fuzz.sh wal 60
       - run: ./fuzz/run_fuzz.sh sstable 60
