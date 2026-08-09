@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>strata: an LSM-tree storage engine, live in your tab</title>
+<meta name="description" content="strata compiled to WebAssembly: write to it, flush it, compact it, cut its power mid-write, and watch it recover every acknowledged byte.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='2' width='14' height='3' rx='1' fill='%23c48134'/%3E%3Crect x='1' y='7' width='14' height='3' rx='1' fill='%234f9ae0'/%3E%3Crect x='1' y='12' width='14' height='3' rx='1' fill='%232c5885'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script src="coi-serviceworker.js"></script>
+</head>
+<body>
+
+<header class="mast">
+  <div class="mast-title">
+    <h1>strata</h1>
+    <span class="led" id="led" data-state="off" aria-live="polite"></span>
+    <span class="led-label" id="led-label">not booted</span>
+  </div>
+  <p class="thesis">An LSM-tree storage engine in C++20, compiled to WebAssembly.
+  The real engine is running in this tab: WAL, memtables, SSTables, group commit,
+  compaction, and the same byte-exact crash gate its 11,149-kill test suite uses.</p>
+  <div class="mast-actions">
+    <button id="boot" class="btn btn-copper">Boot the engine</button>
+    <a class="btn btn-ghost" href="https://github.com/lgoyal6/strata">Source on GitHub</a>
+  </div>
+</header>
+
+<main id="panel" hidden>
+
+  <!-- signature: the byte rail -->
+  <section class="rail-wrap" aria-label="bytes through the write gate">
+    <div class="rail-head">
+      <span class="eyebrow">write gate</span>
+      <span class="rail-count mono"><b id="rail-bytes">0</b> bytes through</span>
+    </div>
+    <div class="rail" id="rail">
+      <div class="rail-fill" id="rail-fill"></div>
+      <div class="rail-gate" id="rail-gate" hidden><span class="gate-flag">power cut armed</span></div>
+    </div>
+  </section>
+
+  <!-- console -->
+  <section class="grid2">
+    <div class="card">
+      <h2 class="eyebrow">talk to it</h2>
+      <div class="kv-row">
+        <input id="kv-key" class="mono" placeholder="key" spellcheck="false">
+        <input id="kv-val" class="mono" placeholder="value" spellcheck="false">
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="kv-put">put</button>
+        <button class="btn" id="kv-get">get</button>
+        <button class="btn" id="kv-del">delete</button>
+      </div>
+      <pre class="console mono" id="console" aria-live="polite">// keys and values land in the real memtable</pre>
+    </div>
+    <div class="card">
+      <h2 class="eyebrow">load it</h2>
+      <p class="hint">Deterministic records, 100 bytes each, acknowledged one by one.</p>
+      <div class="btn-row">
+        <button class="btn" id="load-seq">write 20,000 (1 writer)</button>
+        <button class="btn" id="load-conc">write 20,000 (4 threads)</button>
+      </div>
+      <div class="ops mono" id="ops" aria-live="polite">&nbsp;</div>
+      <p class="hint dim">4 threads share one WAL: group commit batches their syncs.
+      <b id="acked-note">0</b> records acknowledged so far.</p>
+    </div>
+  </section>
+
+  <!-- the tree -->
+  <section class="card">
+    <div class="tree-head">
+      <h2 class="eyebrow">what's on disk</h2>
+      <div class="btn-row">
+        <button class="btn" id="do-flush">flush memtable</button>
+        <button class="btn" id="do-compact">compact everything</button>
+      </div>
+    </div>
+    <div class="tree" id="tree" aria-label="files: write-ahead log and sorted tables"></div>
+  </section>
+
+  <!-- stats -->
+  <section class="tiles" id="tiles" aria-label="engine counters"></section>
+
+  <!-- crash lab -->
+  <section class="card lab">
+    <h2 class="eyebrow">the point of all this</h2>
+    <p>Storage engines earn trust by losing power at the worst possible byte.
+    This button arms the same fault gate as <span class="mono">tools/crash_test</span>:
+    a random kill offset a few hundred KB ahead, then writes until the gate tears
+    one mid-write. Everything the engine acknowledged before the tear must survive
+    the reboot. No exceptions.</p>
+    <div class="btn-row">
+      <button class="btn btn-crash" id="crash">Cut the power mid-write</button>
+      <button class="btn btn-ok" id="reboot" hidden>Reboot and recover</button>
+    </div>
+    <div class="verdict mono" id="verdict" aria-live="assertive"></div>
+  </section>
+
+  <footer class="foot">
+    <p>The native build survives being SIGKILLed mid-write 11,149 times across 2.2M
+    acknowledged writes with zero loss, and beats RocksDB 50x on synchronous commits
+    through group commit (workloads where RocksDB wins are published too).</p>
+    <p class="dim">Built by <a href="https://lakshgoyal.com">Laksh Goyal</a> ·
+    <a href="https://github.com/lgoyal6/strata">github.com/lgoyal6/strata</a></p>
+  </footer>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
