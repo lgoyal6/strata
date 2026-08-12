@@ -1,5 +1,7 @@
-// UI orchestration. The engine lives in engine-worker.js; every call crosses
-// one postMessage boundary and returns a promise.
+// strata demo: UI orchestration. The engine lives in engine-worker.js; every
+// call crosses one postMessage boundary and returns a promise. The engine is
+// the real library (wasm, pthreads); the crash gate is the same byte-offset
+// fault injection tools/crash_test uses.
 
 const OPT = [512, 512, 4, 0]; // 512KB memtable, 512KB tables, L0 trigger 4, fsync=kAlways
 const VALUE_SIZE = 100;
@@ -10,12 +12,12 @@ const pending = new Map();
 let acked = 0;        // records [0, acked) acknowledged by the engine
 let armedAt = -1;     // absolute byte offset of the armed power cut
 let railScale = 2 * 1024 * 1024;
-let busy = false;
 let dead = false;
 let pollTimer = null;
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Number(n).toLocaleString('en-US');
+const BTNS = ['load-seq', 'load-conc', 'do-flush', 'do-compact', 'crash', 'kv-put', 'kv-get', 'kv-del', 'kv-key', 'kv-val'];
 
 function call(fn, ...args) {
   return new Promise((resolve, reject) => {
@@ -23,6 +25,10 @@ function call(fn, ...args) {
     pending.set(id, { resolve, reject });
     worker.postMessage({ id, fn, args });
   });
+}
+
+function setBusy(b) {
+  for (const id of BTNS) $(id).disabled = b || dead;
 }
 
 function logLine(html, cls = '') {
@@ -35,18 +41,6 @@ function logLine(html, cls = '') {
   while (c.childNodes.length > 60) c.removeChild(c.firstChild);
 }
 
-function setLed(state, label) {
-  $('led').dataset.state = state;
-  $('led-label').textContent = label;
-}
-
-function setBusy(b) {
-  busy = b;
-  for (const id of ['kv-put', 'kv-get', 'kv-del', 'load-seq', 'load-conc', 'do-flush', 'do-compact', 'crash']) {
-    $(id).disabled = b || dead;
-  }
-}
-
 // ---------- stats / rail / tree ----------
 
 async function refresh() {
@@ -54,7 +48,7 @@ async function refresh() {
     const st = JSON.parse(await call('stats'));
     renderRail(st.bytes_written);
     renderTree(st.files || []);
-    renderTiles(st);
+    renderCounters(st);
   } catch (_) { /* worker busy or gone; next tick */ }
 }
 
@@ -85,7 +79,7 @@ function renderTree(files) {
     const blocks = items.length === 0
       ? `<span class="tree-empty">${empty}</span>`
       : items.map((f) => {
-          const w = Math.max(6, Math.round(Math.sqrt(f.size) / 4));
+          const w = Math.max(8, Math.round(Math.sqrt(f.size) / 4));
           const label = w > 58 ? `<span>${f.name.replace(/^0+/, '') || '0'}</span>` : '';
           return `<div class="fblock ${cls}" style="width:${w}px" title="${f.name}: ${fmt(f.size)} bytes">${label}</div>`;
         }).join('');
@@ -95,37 +89,36 @@ function renderTree(files) {
   $('tree').innerHTML =
     row('wal', wal, 'wal', 'empty: everything flushed') +
     row('sstables', sst, 'sst', 'none yet: write something, then flush') +
-    row('manifest', meta, 'meta', '-');
+    row('manifest', meta, 'meta', '–');
 }
 
-function renderTiles(st) {
-  const pct = (a, b) => (a + b > 0 ? (100 * a / (a + b)).toFixed(1) + '<small>%</small>' : '-');
-  const tiles = [
-    ['write amp', st.user_bytes_written > 0 ? (+st.write_amplification).toFixed(2) + '<small>x</small>' : '-'],
-    ['flushes', fmt(st.flush_count ?? 0)],
-    ['compactions', fmt(st.compaction_count ?? 0)],
-    ['write stalls', fmt(Math.round((st.write_stall_micros ?? 0) / 1000)) + '<small>ms</small>'],
-    ['bloom skips', pct(st.bloom_skips ?? 0, (st.bloom_checks ?? 0) - (st.bloom_skips ?? 0))],
-    ['cache hits', pct(st.block_cache_hits ?? 0, st.block_cache_misses ?? 0)],
-  ];
-  $('tiles').innerHTML = tiles.map(([l, v]) =>
-    `<div class="tile"><span class="t-label">${l}</span><span class="t-value">${v}</span></div>`).join('');
+function renderCounters(st) {
+  const pct = (a, b) => (a + b > 0 ? (100 * a / (a + b)).toFixed(1) + '%' : '–');
+  $('t-wamp').textContent = st.user_bytes_written > 0 ? (+st.write_amplification).toFixed(2) + '×' : '–';
+  $('t-flush').textContent = fmt(st.flush_count ?? 0);
+  $('t-comp').textContent = fmt(st.compaction_count ?? 0);
+  $('t-stall').textContent = fmt(Math.round((st.write_stall_micros ?? 0) / 1000)) + 'ms';
+  $('t-bloom').textContent = pct(st.bloom_skips ?? 0, (st.bloom_checks ?? 0) - (st.bloom_skips ?? 0));
+  $('t-cache').textContent = pct(st.block_cache_hits ?? 0, st.block_cache_misses ?? 0);
 }
 
 function noteAcked() {
-  $('acked-note').textContent = fmt(acked);
+  $('acked').textContent = fmt(acked);
 }
 
-// ---------- boot ----------
+// ---------- boot (automatic) ----------
 
-$('boot').addEventListener('click', async () => {
+async function boot() {
+  const led = $('led-label');
   if (!window.crossOriginIsolated) {
-    $('boot').textContent = 'Enabling cross-origin isolation…';
-    setTimeout(() => location.reload(), 700);
+    // coi-serviceworker reloads once to enable isolation; if we are still not
+    // isolated, the reload is coming (or the browser can't do it at all).
+    led.textContent = 'enabling cross-origin isolation…';
+    setTimeout(() => {
+      if (!window.crossOriginIsolated) led.textContent = 'this browser cannot enable cross-origin isolation; the engine needs it for threads';
+    }, 4000);
     return;
   }
-  $('boot').disabled = true;
-  $('boot').textContent = 'Booting…';
 
   worker = new Worker('engine-worker.js');
   worker.onmessage = (e) => {
@@ -137,15 +130,15 @@ $('boot').addEventListener('click', async () => {
 
   const rc = await call('open', ...OPT);
   if (rc !== 0) {
-    $('boot').textContent = 'Boot failed: ' + await call('lastError');
+    led.textContent = 'boot failed: ' + await call('lastError');
     return;
   }
-  $('panel').hidden = false;
-  $('boot').textContent = 'Engine is up';
-  setLed('on', 'open · fsync on every ack');
+  led.textContent = 'engine live · wasm · fsync on every ack';
+  setBusy(false);
   pollTimer = setInterval(refresh, 600);
   refresh();
-});
+}
+boot();
 
 // ---------- console ----------
 
@@ -192,7 +185,7 @@ $('load-seq').addEventListener('click', async () => {
   }
   $('ops').innerHTML = failed
     ? `<span class="err">write failed: ${await call('lastError')}</span>`
-    : `${fmt(Math.round(chunks * per / (micros / 1e6)))} <small>synced writes/s · 1 writer</small>`;
+    : `${fmt(Math.round(chunks * per / (micros / 1e6)))} synced writes/s · 1 writer · in-memory FS`;
   setBusy(false);
 });
 
@@ -204,7 +197,7 @@ $('load-conc').addEventListener('click', async () => {
   } else {
     acked += 20000;
     noteAcked();
-    $('ops').innerHTML = `${fmt(Math.round(20000 / (us / 1e6)))} <small>synced writes/s · 4 threads, one WAL, group commit</small>`;
+    $('ops').innerHTML = `${fmt(Math.round(20000 / (us / 1e6)))} synced writes/s · 4 threads, one WAL, group commit`;
   }
   await refresh();
   setBusy(false);
@@ -229,14 +222,15 @@ $('do-compact').addEventListener('click', async () => {
 $('crash').addEventListener('click', async () => {
   setBusy(true);
   const verdict = $('verdict');
-  verdict.className = 'verdict busy';
+  verdict.hidden = false;
+  verdict.className = 'verdict';
 
   const st = JSON.parse(await call('stats'));
   const delta = 300_000 + Math.floor(Math.random() * 600_000);
   armedAt = st.bytes_written + delta;
   await call('crashIn', delta);
   renderRail(st.bytes_written);
-  verdict.textContent = `gate armed ${fmt(delta)} bytes ahead (absolute byte ${fmt(armedAt)}). writing toward it…`;
+  verdict.textContent = `Gate armed ${fmt(delta)} bytes ahead (absolute byte ${fmt(armedAt)}); writing toward it…`;
 
   // Write toward the gate until a write tears.
   let lastError = '';
@@ -256,29 +250,30 @@ $('crash').addEventListener('click', async () => {
   dead = true;
   document.body.classList.add('dead');
   $('rail').classList.add('torn');
-  setLed('dead', 'dead: torn write mid-WAL');
-  setBusy(false);
+  $('led-label').textContent = 'dead: torn write mid-WAL';
+  setBusy(true);
   $('crash').hidden = true;
-  $('reboot').hidden = false;
+  const rb = $('reboot');
+  rb.hidden = false;
+  rb.disabled = false;
 
   verdict.className = 'verdict bad';
-  verdict.textContent =
-    `power cut at byte ${fmt(armedAt)}.\n` +
-    `engine error: ${lastError.replace(/ \(at index \d+\)/, '')}\n` +
-    `${fmt(acked)} records were acknowledged before the lights went out. ` +
-    `every one of them is now a promise.`;
+  verdict.innerHTML =
+    `<b>Power cut at byte ${fmt(armedAt)}.</b> Engine error: ` +
+    `${lastError.replace(/ \(at index \d+\)/, '')}. ` +
+    `${fmt(acked)} records were acknowledged before the lights went out; every one of them is now a promise.`;
 });
 
 $('reboot').addEventListener('click', async () => {
   const verdict = $('verdict');
-  verdict.className = 'verdict busy';
-  verdict.textContent = 'rebooting: WAL replay, torn-tail truncation, manifest recovery…';
+  verdict.className = 'verdict';
+  verdict.textContent = 'Rebooting: WAL replay, torn-tail truncation, manifest recovery…';
   $('reboot').disabled = true;
 
   const rc = await call('recover', ...OPT);
   if (rc !== 0) {
     verdict.className = 'verdict bad';
-    verdict.textContent = 'reopen failed: ' + await call('lastError');
+    verdict.textContent = 'Reopen failed: ' + await call('lastError');
     $('reboot').disabled = false;
     return;
   }
@@ -291,24 +286,22 @@ $('reboot').addEventListener('click', async () => {
   document.body.classList.remove('dead');
   $('rail').classList.remove('torn');
   armedAt = -1;
-  setLed('on', 'open · recovered');
+  $('led-label').textContent = 'engine live · recovered';
   $('reboot').hidden = true;
-  $('reboot').disabled = false;
   $('crash').hidden = false;
   setBusy(false);
   refresh();
 
   if (missing === -1) {
     verdict.className = 'verdict ok';
-    verdict.textContent =
-      `recovery complete. read back all ${fmt(acked)} acknowledged records in ${ms}ms: ` +
-      `every key present, every value byte-identical.\n` +
-      `the torn write? cut from the WAL tail during replay, exactly as designed. ` +
-      `run it again: the gate lands somewhere new every time.`;
+    verdict.innerHTML =
+      `<b>Recovery complete.</b> Read back all ${fmt(acked)} acknowledged records in ${ms}ms: ` +
+      `every key present, every value byte-identical. The torn write was cut from the WAL tail ` +
+      `during replay, exactly as designed. Run it again: the gate lands somewhere new every time.`;
   } else {
     verdict.className = 'verdict bad';
-    verdict.textContent =
-      `RECOVERY FAILED: record ${fmt(missing)} of ${fmt(acked)} is missing or corrupt. ` +
-      `this would be a real durability bug; please open an issue with this seed.`;
+    verdict.innerHTML =
+      `<b>RECOVERY FAILED:</b> record ${fmt(missing)} of ${fmt(acked)} is missing or corrupt. ` +
+      `This would be a real durability bug; please open an issue with this seed.`;
   }
 });
