@@ -7,6 +7,10 @@ backpressure, MVCC snapshots — and a crash harness that SIGKILLs the engine
 at randomized byte offsets inside its own `write(2)` calls and proves that
 no acknowledged write is ever lost and no torn record is ever accepted.
 
+**Live demo:** [lgoyal6.github.io/strata](https://lgoyal6.github.io/strata/), the
+real engine compiled to WebAssembly: write to it, cut its power mid-write, and
+watch recovery bring back every acknowledged byte.
+
 > **Thesis.** In a storage engine the interesting property is not speed,
 > it's the *contract*: an acknowledged write exists after any crash, and
 > recovery never invents data. strata makes that contract mechanically

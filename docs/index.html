@@ -3,110 +3,165 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>strata: an LSM-tree storage engine, live in your tab</title>
-<meta name="description" content="strata compiled to WebAssembly: write to it, flush it, compact it, cut its power mid-write, and watch it recover every acknowledged byte.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='2' width='14' height='3' rx='1' fill='%23c48134'/%3E%3Crect x='1' y='7' width='14' height='3' rx='1' fill='%234f9ae0'/%3E%3Crect x='1' y='12' width='14' height='3' rx='1' fill='%232c5885'/%3E%3C/svg%3E">
+<title>strata — a storage engine you can power-cut</title>
+<meta name="description" content="An LSM-tree storage engine in C++20, live in your tab: write to it, flush it, compact it, cut its power mid-write, and watch recovery bring back every acknowledged byte.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="strata — a storage engine you can power-cut">
+<meta property="og:description" content="The real engine compiled to WebAssembly: WAL, memtables, SSTables, group commit, compaction, and the same byte-exact crash gate its 11,149-kill test suite uses.">
+<meta property="og:url" content="https://lgoyal6.github.io/strata/">
+<meta property="og:image" content="https://lgoyal6.github.io/strata/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='2' width='14' height='3' rx='1' fill='%236f4d1d'/%3E%3Crect x='1' y='7' width='14' height='3' rx='1' fill='%23a08657'/%3E%3Crect x='1' y='12' width='14' height='3' rx='1' fill='%2357513f'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 <script src="coi-serviceworker.js"></script>
 </head>
 <body>
 
-<header class="mast">
-  <div class="mast-title">
-    <h1>strata</h1>
-    <span class="led" id="led" data-state="off" aria-live="polite"></span>
-    <span class="led-label" id="led-label">not booted</span>
+<header class="gut">
+  <div>
+    <div class="eyebrow">lsm-tree storage engine &middot; c++20 &middot; zero-dependency core &middot;
+      <span class="led-label" id="led-label">booting engine&hellip;</span></div>
+    <h1>strata<span>.</span></h1>
+    <p class="thesis">In a storage engine the interesting property is not speed, it's the
+    <i>contract</i>: an acknowledged write exists after any crash, and recovery never invents
+    data. The engine below is the real library, WAL, memtables, SSTables, group commit,
+    compaction, compiled to WebAssembly, wearing the same byte-exact crash gate its test suite
+    uses. <b>Cut its power and see.</b></p>
+    <div class="hdr-links">
+      <a href="https://github.com/lgoyal6/strata">github.com/lgoyal6/strata</a>
+      <a href="#break">skip to the crash &darr;</a>
+    </div>
   </div>
-  <p class="thesis">An LSM-tree storage engine in C++20, compiled to WebAssembly.
-  The real engine is running in this tab: WAL, memtables, SSTables, group commit,
-  compaction, and the same byte-exact crash gate its 11,149-kill test suite uses.</p>
-  <div class="mast-actions">
-    <button id="boot" class="btn btn-copper">Boot the engine</button>
-    <a class="btn btn-ghost" href="https://github.com/lgoyal6/strata">Source on GitHub</a>
+  <div>
+    <div class="stats">
+      <div class="stat k1"><span class="n">11,149</span><span class="l">real SIGKILLs mid-write in the crash matrix; zero acknowledged writes lost</span></div>
+      <div class="stat"><span class="n">50&times;</span><span class="l">RocksDB on synchronous commits: group commit shares one F_FULLFSYNC across writers</span></div>
+      <div class="stat"><span class="n">0.4&times;</span><span class="l">scans, where RocksDB wins; the losing axes are published too</span></div>
+    </div>
+    <p class="stats-note">12 configs &times; 1,000 kills on every CI push &middot; bench/results/crash_matrix.txt &middot; raw YCSB CSVs in the repo</p>
   </div>
 </header>
 
-<main id="panel" hidden>
-
-  <!-- signature: the byte rail -->
-  <section class="rail-wrap" aria-label="bytes through the write gate">
-    <div class="rail-head">
-      <span class="eyebrow">write gate</span>
-      <span class="rail-count mono"><b id="rail-bytes">0</b> bytes through</span>
+<section id="break" class="gut">
+  <div class="sec-bar">
+    <span class="no">01</span><h2>Break it</h2>
+    <span class="lede">write real records, arm a power cut a few hundred KB ahead, and reboot into recovery</span>
+  </div>
+  <div class="bench">
+    <div class="toolbar">
+      <span class="lag"><b id="acked" class="k1">0</b> records acknowledged &middot; <span id="rail-bytes">0</span> bytes through the WAL</span>
+      <span class="ops" id="ops"></span>
+      <span class="toolbtns">
+        <button class="btn" id="load-seq" disabled>write 20,000</button>
+        <button class="btn" id="load-conc" disabled>&times;4 threads</button>
+        <button class="btn" id="do-flush" disabled>flush</button>
+        <button class="btn" id="do-compact" disabled>compact</button>
+        <button class="btn btn-ox" id="crash" disabled>Cut the power</button>
+        <button class="btn btn-ok" id="reboot" hidden>Reboot and recover</button>
+      </span>
     </div>
-    <div class="rail" id="rail">
+    <div class="rail" id="rail" aria-label="bytes through the write gate">
       <div class="rail-fill" id="rail-fill"></div>
-      <div class="rail-gate" id="rail-gate" hidden><span class="gate-flag">power cut armed</span></div>
+      <div class="rail-gate" id="rail-gate" hidden><span>power cut armed</span></div>
     </div>
-  </section>
+    <div class="tree" id="tree" aria-label="files on disk: write-ahead log and sorted tables"></div>
+  </div>
+  <p class="verdict" id="verdict" hidden></p>
+  <p class="fig"><b>Fig. 1.</b> What's on disk, live: the write-ahead log accretes at the top,
+  memtable flushes harden into L0 tables, compaction fuses them into the leveled strata below.
+  The power cut arms the same fault-injection gate as <i>tools/crash_test</i>, a byte offset
+  inside the engine's own write path; everything acknowledged before the tear must survive the
+  reboot, with every value byte-identical. <i>The browser filesystem is in-memory: the durability
+  mechanics (WAL bytes, torn-tail truncation, replay) are real, but throughput here is not a disk
+  number; the measured numbers above come from real hardware, see docs/BENCHMARKS.md.</i></p>
+</section>
 
-  <!-- console -->
-  <section class="grid2">
-    <div class="card">
-      <h2 class="eyebrow">talk to it</h2>
+<section id="poke" class="gut">
+  <div class="sec-bar">
+    <span class="no">02</span><h2>Poke it</h2>
+    <span class="lede">your own keys land in the same memtable; the counters are the engine's own</span>
+  </div>
+  <div class="measure-grid">
+    <div>
       <div class="kv-row">
-        <input id="kv-key" class="mono" placeholder="key" spellcheck="false">
-        <input id="kv-val" class="mono" placeholder="value" spellcheck="false">
+        <input id="kv-key" class="kv" placeholder="key" spellcheck="false" disabled>
+        <input id="kv-val" class="kv" placeholder="value" spellcheck="false" disabled>
+        <button class="btn" id="kv-put" disabled>put</button>
+        <button class="btn" id="kv-get" disabled>get</button>
+        <button class="btn" id="kv-del" disabled>delete</button>
       </div>
-      <div class="btn-row">
-        <button class="btn" id="kv-put">put</button>
-        <button class="btn" id="kv-get">get</button>
-        <button class="btn" id="kv-del">delete</button>
-      </div>
-      <pre class="console mono" id="console" aria-live="polite">// keys and values land in the real memtable</pre>
+      <pre class="console" id="console" aria-live="polite">// keys and values land in the real memtable; puts are acknowledged after the WAL write</pre>
+      <p class="fig"><b>Fig. 2.</b> Every put is a WAL record and a skiplist insert; every get
+      walks memtables, then the levels, bloom filters first. Delete writes a tombstone that
+      survives until compaction drops it at the bottommost level.</p>
     </div>
-    <div class="card">
-      <h2 class="eyebrow">load it</h2>
-      <p class="hint">Deterministic records, 100 bytes each, acknowledged one by one.</p>
-      <div class="btn-row">
-        <button class="btn" id="load-seq">write 20,000 (1 writer)</button>
-        <button class="btn" id="load-conc">write 20,000 (4 threads)</button>
-      </div>
-      <div class="ops mono" id="ops" aria-live="polite">&nbsp;</div>
-      <p class="hint dim">4 threads share one WAL: group commit batches their syncs.
-      <b id="acked-note">0</b> records acknowledged so far.</p>
+    <div>
+      <table class="results" aria-label="live engine counters">
+        <caption>Table 1. Live engine counters.</caption>
+        <tbody id="tbody">
+          <tr><td>write amplification</td><td class="ox" id="t-wamp">&ndash;</td></tr>
+          <tr><td>flushes</td><td id="t-flush">0</td></tr>
+          <tr><td>compactions</td><td id="t-comp">0</td></tr>
+          <tr><td>write stalls</td><td id="t-stall">0ms</td></tr>
+          <tr><td>bloom skips</td><td id="t-bloom">&ndash;</td></tr>
+          <tr><td>block-cache hits</td><td id="t-cache">&ndash;</td></tr>
+        </tbody>
+      </table>
+      <p class="fig">Backpressure is visible here: pile up L0 files without compacting and the
+      engine stalls writes rather than OOM.</p>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- the tree -->
-  <section class="card">
-    <div class="tree-head">
-      <h2 class="eyebrow">what's on disk</h2>
-      <div class="btn-row">
-        <button class="btn" id="do-flush">flush memtable</button>
-        <button class="btn" id="do-compact">compact everything</button>
-      </div>
+<section id="saw" class="gut">
+  <div class="sec-bar">
+    <span class="no">03</span><h2>What you just saw</h2>
+    <span class="lede">every behavior above is a specific piece of the engine</span>
+  </div>
+  <div class="map">
+    <div class="map-cell">
+      <span class="k">THE GATE</span>
+      <div class="saw">A power cut landing at an exact byte inside a write.</div>
+      <div class="is">Fault injection at the engine's single write choke point, the same gate
+      <i>tools/crash_test</i> uses to SIGKILL 12,000 runs on CI. The kill offset is a byte
+      count, so torn writes are deterministic and replayable: <code>src/util/env.cc</code></div>
     </div>
-    <div class="tree" id="tree" aria-label="files: write-ahead log and sorted tables"></div>
-  </section>
-
-  <!-- stats -->
-  <section class="tiles" id="tiles" aria-label="engine counters"></section>
-
-  <!-- crash lab -->
-  <section class="card lab">
-    <h2 class="eyebrow">the point of all this</h2>
-    <p>Storage engines earn trust by losing power at the worst possible byte.
-    This button arms the same fault gate as <span class="mono">tools/crash_test</span>:
-    a random kill offset a few hundred KB ahead, then writes until the gate tears
-    one mid-write. Everything the engine acknowledged before the tear must survive
-    the reboot. No exceptions.</p>
-    <div class="btn-row">
-      <button class="btn btn-crash" id="crash">Cut the power mid-write</button>
-      <button class="btn btn-ok" id="reboot" hidden>Reboot and recover</button>
+    <div class="map-cell">
+      <span class="k">THE REPLAY</span>
+      <div class="saw">A reboot that recovers every acknowledged record.</div>
+      <div class="is">WAL replay checks every record's CRC and durably truncates the torn tail it
+      stops at, so a tear can never resurrect on the next crash (a real bug the matrix caught):
+      <code>src/wal/wal_reader.cc</code>, <code>src/wal/wal_writer.cc</code></div>
     </div>
-    <div class="verdict mono" id="verdict" aria-live="assertive"></div>
-  </section>
+    <div class="map-cell">
+      <span class="k">THE TREE</span>
+      <div class="saw">Files hardening, sinking, and fusing into levels.</div>
+      <div class="is">Skiplist memtables flush to prefix-compressed SSTables with bloom filters;
+      size-tiered L0 merges into leveled L1&hellip;L6 with snapshot-aware GC:
+      <code>src/db/memtable.cc</code>, <code>src/table/table_builder.cc</code>,
+      <code>src/db/version.cc</code></div>
+    </div>
+    <div class="map-cell">
+      <span class="k">THE CONTRACT</span>
+      <div class="saw">Nothing invented, nothing lost, in any order.</div>
+      <div class="is">Every byte on disk is CRC-guarded or reconstructible; the manifest recovers
+      by full snapshot, atomic rename, directory fsync; group commit batches writers into one
+      sync: <code>src/db/db_impl.cc</code>, <code>src/util/crc32c.cc</code></div>
+    </div>
+  </div>
+</section>
 
-  <footer class="foot">
-    <p>The native build survives being SIGKILLed mid-write 11,149 times across 2.2M
-    acknowledged writes with zero loss, and beats RocksDB 50x on synchronous commits
-    through group commit (workloads where RocksDB wins are published too).</p>
-    <p class="dim">Built by <a href="https://lakshgoyal.com">Laksh Goyal</a> ·
-    <a href="https://github.com/lgoyal6/strata">github.com/lgoyal6/strata</a></p>
-  </footer>
-
-</main>
+<footer class="gut">
+  <p>The crash matrix runs 12 configurations &times; 1,000 iterations on every push: byte-offset
+  and timer kills, fresh and chained recovery, all three fsync policies, zero acknowledged writes
+  lost. strata beats RocksDB 50&times; on synchronous commits through group commit and loses
+  0.4&ndash;0.8&times; on scans and 4-thread workloads, and both sides are published, because a
+  benchmark table where one side wins everything means the benchmark is broken.</p>
+  <div class="links">
+    Built by <a href="https://lakshgoyal.com">Laksh Goyal</a> &middot; <a href="https://github.com/lgoyal6/strata">source</a><br>
+    also live: <a href="https://lgoyal6.github.io/taut/">taut</a> &middot; <a href="https://lgoyal6.github.io/tollgate/">tollgate</a>
+  </div>
+</footer>
 
 <script src="app.js"></script>
 </body>
