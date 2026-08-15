@@ -322,7 +322,7 @@ class PosixEnv final : public Env {
     }
 
     Status get_file_size(const std::string& fname, std::uint64_t* size) override {
-        struct stat st{};
+        struct stat st = {};
         if (::stat(fname.c_str(), &st) < 0) {
             *size = 0;
             return posix_error(fname, errno);

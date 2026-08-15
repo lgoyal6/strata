@@ -20,10 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y clang-format
+      - run: sudo apt-get update && sudo apt-get install -y clang-format-18
       - run: |
           find include src test tools fuzz bench -name '*.h' -o -name '*.cc' | \
-            xargs clang-format --dry-run --Werror
+            xargs clang-format-18 --dry-run --Werror
 
   # The acceptance gate: >=10k randomized SIGKILL points across the full
   # {fsync policy} x {kill mechanism} x {fresh, chained} matrix, zero
