@@ -1,9 +1,9 @@
-# strata — design document
+# strata - design document
 
 A leveled LSM-tree key-value store in C++20. Single-node, embedded (a
 library plus tools), no external dependencies in the core. The design
 goal, in order: **provable crash durability**, then read/write
-performance, then simplicity of the recovery story — every byte on disk
+performance, then simplicity of the recovery story - every byte on disk
 is either checksummed or reconstructible.
 
 This document proposes the on-disk formats first (they are the contract
@@ -88,7 +88,7 @@ The CRC covers the block bytes plus the compression byte. Every block
 read verifies the CRC before parsing (readers must assume the bytes are
 adversarial; the fuzz targets enforce this). Lookup within a block:
 binary-search the restart array, then linear-scan forward decoding
-prefixes. `compression_type` is reserved — v1 ships prefix compression
+prefixes. `compression_type` is reserved - v1 ships prefix compression
 only; benchmarks against RocksDB disable its block compression to keep
 the comparison honest.
 
@@ -117,7 +117,7 @@ with the standard block trailer (compression byte + CRC). Whole-file
 (not per-block) filters keep v1 simple; the footprint at 10 bits/key is
 small enough to keep resident.
 
-**Footer** — fixed size, always the last 56 bytes:
+**Footer** - fixed size, always the last 56 bytes:
 
 ```
 footer := BlockHandle filter_handle   (padded)   \
@@ -131,7 +131,7 @@ Open sequence: read last 56 bytes → check magic → check footer CRC →
 read + CRC-check index and filter blocks. A truncated, torn, or
 bit-flipped SSTable fails loudly at open or at first block read; it can
 never silently serve wrong data. SSTables are written to their final
-name, fsync'd, and only then referenced by the MANIFEST — so a torn
+name, fsync'd, and only then referenced by the MANIFEST - so a torn
 SSTable can only exist as an *orphan* that recovery deletes (§1.3).
 
 ### 1.2 WAL format
@@ -171,13 +171,13 @@ accepted iff the header is complete, `length` fits within the remaining
 file, and the CRC matches. The first failure is treated as the torn
 tail of the log: replay stops there and the file is truncated
 logically. Because segments are written once and never recycled,
-trailing garbage can only be the result of a torn final write — there
+trailing garbage can only be the result of a torn final write - there
 is no stale-record ambiguity, and the CRC mask plus monotonic file
 numbers close the recycled-name hole anyway. **A torn or corrupt record
 is never applied**; the crash harness and `fuzz_wal` both enforce this.
 
 Regardless of fsync policy, the WAL's userspace buffer is flushed to
-the kernel with `write(2)` before every acknowledgement — "fsync=never"
+the kernel with `write(2)` before every acknowledgement - "fsync=never"
 means *no fsync*, never *acked data still in userspace*. This is what
 makes all three policies SIGKILL-durable.
 
@@ -194,7 +194,7 @@ drive cache; `F_FULLFSYNC` does. `Options::use_fullfsync` selects it
 (off by default, matching RocksDB's default on macOS; the design doc is
 explicit about this so the durability claim is precise). Note SIGKILL
 does not destroy the page cache, so *all three* policies must show zero
-acked-write loss in the SIGKILL matrix — the policies differ only in
+acked-write loss in the SIGKILL matrix - the policies differ only in
 their power-loss window. See §6.
 
 ### 1.3 MANIFEST
@@ -224,7 +224,7 @@ payload := uint32 version
 Every metadata transition (flush completes, compaction completes) is
 one atomic rename: the system moves between two fully-consistent
 states, and there is no manifest-replay code to get wrong. The trade is
-O(files) rewrite per transition — irrelevant at embedded scale and an
+O(files) rewrite per transition - irrelevant at embedded scale and an
 explicitly documented scalability limit (RocksDB's log-structured
 VersionEdit design is the scale-up path).
 
@@ -234,14 +234,14 @@ VersionEdit design is the scale-up path).
    DB (an empty MANIFEST is written *before* the first WAL). Stale
    `MANIFEST.tmp` is deleted.
 2. Delete any `*.sst`/`*.tmp` in the directory not referenced by the
-   MANIFEST — these are orphans from a crash mid-flush/compaction,
+   MANIFEST - these are orphans from a crash mid-flush/compaction,
    acknowledged to no one.
 3. Replay **every record** of every `*.wal` with file number ≥
    `min_wal_number`, in file-number order, stopping at the first torn
    record per §1.2. There is **no sequence filter**: WAL rotation is
    coupled to memtable rotation, so WALs ≥ `min_wal_number` contain
    exactly the unflushed data. (Filtering by the manifest's
-   `last_sequence` would be wrong — that counter can include writes
+   `last_sequence` would be wrong - that counter can include writes
    that were only ever in WAL + memtable.)
    A torn tail is then **durably truncated** (`ftruncate` + fsync) to
    the last valid record boundary. Without this, the chained-crash
@@ -254,7 +254,7 @@ VersionEdit design is the scale-up path).
    always reported as corruption rather than guessed at.
 4. `last_sequence = max(manifest.last_sequence, max replayed seq)`;
    `next_file_number = max(manifest.next_file_number, 1 + max file
-   number seen on disk)` — orphans minted after the last MANIFEST write
+   number seen on disk)` - orphans minted after the last MANIFEST write
    may exceed the recorded counter.
 
 **Ordering invariants that make this safe** (each arrow is a completed,
@@ -277,12 +277,12 @@ write SST → fsync(SST) → fsync(dir)            // SST + its dirent durable
   references them (live-set check over all referenced versions plus
   in-flight compaction outputs).
 - The ack for a write happens after `write()` (and per-policy sync) of
-  its WAL record — an acked write is always in {WAL} or {WAL, SST} or
+  its WAL record - an acked write is always in {WAL} or {WAL, SST} or
   {SST}, never in nothing.
 - SSTables and the MANIFEST are **always** fsync'd; `FsyncPolicy`
   governs the WAL only.
 - Any *real* (non-injected) write/fsync failure in the background
-  latches a background error and the DB refuses further writes — fsync
+  latches a background error and the DB refuses further writes - fsync
   is never retried after failure (post-failure fsync semantics are
   undefined).
 
@@ -293,7 +293,7 @@ write SST → fsync(SST) → fsync(dir)            // SST + its dirent durable
 ### 2.1 Memtable
 
 An arena-backed concurrent skiplist (LevelDB-style): immutable nodes,
-atomic forward pointers with release/acquire ordering — one writer
+atomic forward pointers with release/acquire ordering - one writer
 (serialized by the commit path) and many lock-free readers. Entries are
 encoded inline in the arena:
 
@@ -304,15 +304,15 @@ varint32 internal_key_len | user_key | tag(8B) | varint32 value_len | value
 Max height 12, branching 1/4, per-node height chosen from a per-memtable
 RNG. The arena hands out 4 KiB chunks and is freed as a unit when the
 last reference to the memtable drops (`std::shared_ptr<MemTable>` held
-by the DB, by in-flight reads, and by iterators — the arena lifetime
+by the DB, by in-flight reads, and by iterators - the arena lifetime
 problem solved by construction).
 
 When a memtable reaches `write_buffer_size` it is atomically swapped
-for a fresh one (together with a new WAL segment — WAL rotation is
+for a fresh one (together with a new WAL segment - WAL rotation is
 coupled to memtable rotation, which is what makes replay-all-WALs
 correct) and pushed onto the immutable queue. A dedicated **flush
 thread** drains immutables to L0 oldest-first; a separate **compaction
-thread** runs level compactions — so a long L1→L2 compaction can never
+thread** runs level compactions - so a long L1→L2 compaction can never
 block flushes into stalling writers that L0 could still absorb.
 
 ### 2.2 Write path (group commit)
@@ -322,7 +322,7 @@ becomes the *leader*: it coalesces all pending batches into one WAL
 record group, releases the mutex, does the WAL append + per-policy
 sync **once** for the group, re-acquires the mutex, applies all batches
 to the memtable, assigns results, and wakes the group. This amortizes
-fsync across concurrent writers — the difference between ~200 and many
+fsync across concurrent writers - the difference between ~200 and many
 thousands of synchronous commits/sec.
 
 The global `last_sequence` is published (made visible to readers)
@@ -335,7 +335,7 @@ The leader runs the WAL append with the DB mutex *released*; under
 concurrently, so `WalWriter` serializes `add_record`/`sync` with its
 own (uncontended) mutex. The 12k-kill-point matrix caught the variant
 without it: a sync could flush a half-appended buffer and leave a
-CRC-invalid record mid-WAL — a one-in-thousands interleaving.
+CRC-invalid record mid-WAL - a one-in-thousands interleaving.
 
 Backpressure (writes stall rather than OOM), checked by the leader
 before committing:
@@ -377,7 +377,7 @@ benchmark reports strata with and without it.
 
 Range scans: a heap-based merging iterator over (memtable, immutables,
 every L0 file, one concatenating iterator per level ≥ 1), wrapped by a
-`DBIter` that enforces MVCC visibility — for each user key, take the
+`DBIter` that enforces MVCC visibility - for each user key, take the
 first version with `seq <= snapshot`, suppress older versions and
 everything under a tombstone. Forward iteration only in v1 (documented
 limitation; YCSB A/B/C does not scan).
@@ -395,7 +395,7 @@ limitation; YCSB A/B/C does not scan).
 - Compaction GC (LevelDB's `last_sequence_for_key` rule): walking
   merged input in internal-key order, a version of user key K is
   dropped iff a newer version of K has already been emitted *at or
-  below the same snapshot boundary* — i.e. versions still visible to
+  below the same snapshot boundary* - i.e. versions still visible to
   some live snapshot are retained. A tombstone is dropped (not just its
   victims) only when compacting into the bottommost level for its key
   range and no snapshot can still observe it.
@@ -437,7 +437,7 @@ WA ≈ 1 (WAL) + 1 (flush) + Σ_{i=1..n-1} (1 + F/2·overlap_factor)
 worst case ≈ `1 + 1 + 11·(n-1)`; measured in practice well below that
 because overlap is partial. The benchmark reports **measured** WA =
 (wal_bytes + flush_bytes + compaction_write_bytes) / user_bytes from
-internal counters, alongside RocksDB's from its statistics — the design
+internal counters, alongside RocksDB's from its statistics - the design
 target is that strata's WA is within ~1.5× of RocksDB's on the YCSB
 load phase, and the gap is explained rather than hidden.
 
@@ -455,24 +455,24 @@ Claim to prove: **no acknowledged write is ever lost across SIGKILL at
 any instruction boundary, under any fsync policy; and recovery never
 accepts a torn or corrupt record.** (Power-loss durability additionally
 requires `fsync=always`; with `use_fullfsync` on macOS it extends
-through the drive cache. SIGKILL cannot test power loss — the page
-cache survives — so the matrix claims exactly what it tests.)
+through the drive cache. SIGKILL cannot test power loss - the page
+cache survives - so the matrix claims exactly what it tests.)
 
 Two kill mechanisms, both real SIGKILL:
 
 1. **Byte-offset kills** (deterministic torn writes): the Env write
    path counts every byte handed to `write(2)` across all files. With
-   `STRATA_CRASH_AT_BYTES=n`, the write that crosses byte *n* is split —
+   `STRATA_CRASH_AT_BYTES=n`, the write that crosses byte *n* is split  - 
    the prefix up to *n* is written, then `raise(SIGKILL)`. Sweeping *n*
    randomly places a torn write at arbitrary byte offsets inside WAL
-   records, SSTable blocks, MANIFEST.tmp — everywhere.
+   records, SSTable blocks, MANIFEST.tmp - everywhere.
 2. **Timer kills**: the orchestrator SIGKILLs the child at a random
    wall-clock offset, landing kills between syscalls, mid-compaction,
    mid-flush.
 
 Protocol per kill point: orchestrator forks a workload child. The child
 writes batches; after each `DB::Write` returns it writes an ack line to
-an inherited pipe with a raw `write(2)` (no userspace buffering — an
+an inherited pipe with a raw `write(2)` (no userspace buffering - an
 acked line implies the DB write returned). Values embed
 `crc32c(key ⧺ op_index)` so any accepted-but-torn value is detectable.
 After the kill, the orchestrator reopens the DB and asserts:
@@ -513,7 +513,7 @@ otherwise (documented). Reported: throughput, p50/p99 latency, measured
 write amplification, and an explicit **"where strata loses"** analysis.
 Losses are expected on read-heavy workloads (RocksDB's block cache +
 per-block filters), high-concurrency writes (pipelined WAL), and space
-(no compression) — the point of the table is that the numbers are real.
+(no compression) - the point of the table is that the numbers are real.
 
 ## 9. Explicit non-goals (v1)
 

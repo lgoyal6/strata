@@ -1,11 +1,11 @@
-# strata — resume material
+# strata - resume material
 
 Every number below is measured, committed to `bench/results/`, and
 reproducible with one command. Don't claim anything here you can't re-run.
 
 ## Project line
 
-**strata** — LSM-tree storage engine in C++20 with provable crash durability
+**strata** - LSM-tree storage engine in C++20 with provable crash durability
 *(C++20, POSIX, CMake, libFuzzer, ASan/UBSan/TSan, GitHub Actions)*
 
 ## Bullets (pick 3–4)
@@ -18,7 +18,7 @@ reproducible with one command. Don't claim anything here you can't re-run.
 - Proved the durability contract with a fault-injection crash harness that
   tears `write(2)` calls at randomized byte offsets and SIGKILLs the engine:
   12,000 crash points (11,149 real kills) across every fsync policy and
-  chained crash-recover-crash cycles — 2.2M acknowledged writes verified,
+  chained crash-recover-crash cycles - 2.2M acknowledged writes verified,
   zero lost, zero torn records accepted; the same 10k+-kill matrix runs in CI
   on every push.
 - The harness caught two real bugs pre-release: a recovery-protocol hole
@@ -27,14 +27,14 @@ reproducible with one command. Don't claim anything here you can't re-run.
   interleaving where the background fsync tick raced the group-commit
   leader's WAL buffer.
 - Fuzzed every recovery-path parser (WAL, SSTable, MANIFEST) with
-  coverage-instrumented libFuzzer under ASan/UBSan — 26M+ executions, zero
+  coverage-instrumented libFuzzer under ASan/UBSan - 26M+ executions, zero
   findings; test suite also clean under ThreadSanitizer, plus a model-based
   random tester validating scans/point-reads/snapshots against a reference
   map through constant flush/compaction churn and reopens.
 - Benchmarked head-to-head against RocksDB on YCSB (matched tuning,
   compression off, 1M keys): beat it single-threaded (1.24× load, 1.17×
-  YCSB-A, parity on reads) and published where it loses — 0.65–0.79× at 4
-  threads and 0.43× on scans — with root-cause analysis; write amplification
+  YCSB-A, parity on reads) and published where it loses - 0.65–0.79× at 4
+  threads and 0.43× on scans - with root-cause analysis; write amplification
   4.53× vs RocksDB's 4.66× on the identical load; 50× RocksDB's throughput
   on synchronous commits (1,015 vs 20 ops/s, both under `F_FULLFSYNC`) via
   group commit.
@@ -43,8 +43,8 @@ reproducible with one command. Don't claim anything here you can't re-run.
 
 - Built an LSM-tree storage engine in C++20 (WAL, SSTables + Bloom filters,
   leveled compaction, MVCC, group commit) and proved zero acknowledged-write
-  loss across 12,000 randomized SIGKILL crash points — including
-  byte-granular torn writes injected inside its own `write(2)` calls — with
+  loss across 12,000 randomized SIGKILL crash points - including
+  byte-granular torn writes injected inside its own `write(2)` calls - with
   the matrix re-run in CI on every push; fault harness surfaced and fixed 2
   real recovery/concurrency bugs.
 - Benchmarked against RocksDB on YCSB with matched tuning: 1.04–1.24×
@@ -62,7 +62,7 @@ reproducible with one command. Don't claim anything here you can't re-run.
 | unit tests | 46, incl. 30k-op model tester; ASan/UBSan/TSan clean | `ctest` |
 | load (1 thread) | 438k ops/s vs RocksDB 354k (1.24×) | `bench/results/ycsb.txt` |
 | reads (4 threads) | 1.83M ops/s vs RocksDB 2.67M (0.69×) | same |
-| scans | 0.43× RocksDB — worst loss, root-caused | same |
+| scans | 0.43× RocksDB - worst loss, root-caused | same |
 | write amp (1M load) | 4.53× vs RocksDB 4.66× | same |
 | sync commits (F_FULLFSYNC, 4T) | 1,015 vs 20 ops/s | same |
 | hardware | Apple M3 Pro, APFS, RocksDB 11.1.2 (brew) | BENCHMARKS.md §3 |
@@ -95,10 +95,10 @@ reproducible with one command. Don't claim anything here you can't re-run.
 ## Do-not-overclaim notes
 
 - "Beats RocksDB" only single-threaded and on sync commits; say "competitive
-  single-threaded, published losses at 4 threads" — the honesty is the
+  single-threaded, published losses at 4 threads" - the honesty is the
   point.
 - Durability claim is "zero acknowledged-write loss under SIGKILL at 12k
-  randomized points" — not "power-loss proven" (that requires pulling
+  randomized points" - not "power-loss proven" (that requires pulling
   plugs).
-- Bench is one machine, one run per cell, page-cache-resident working set —
+- Bench is one machine, one run per cell, page-cache-resident working set  - 
   documented in BENCHMARKS.md §8.

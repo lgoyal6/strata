@@ -1,8 +1,8 @@
-# strata benchmarks — method and results
+# strata benchmarks - method and results
 
 > **Honesty contract.** Both sides of every trade get published. strata is
 > ~6k lines written in a week; RocksDB is a decade of production tuning. A
-> table where strata wins everything would mean the benchmark is broken —
+> table where strata wins everything would mean the benchmark is broken  - 
 > the interesting part is *where* it loses and *why*.
 
 ## 1. Headline
@@ -56,7 +56,7 @@ Method notes:
 - YCSB core workloads, scrambled-zipfian θ=0.99 over 1 M records,
   100 B values, 16+4 B keys (`user` + 16 hex).
 - Workloads: **load** (1 M inserts), **A** 50/50 read/update, **B** 95/5,
-  **C** 100% read, **E-lite** 95% scan(≤100)/5% insert — 1 M ops each
+  **C** 100% read, **E-lite** 95% scan(≤100)/5% insert - 1 M ops each
   (200 k for E), threads ∈ {1, 4}.
 - Run phases execute against the load-phase directory after a reopen; no
   manual compaction between load and run (both engines settle on their own).
@@ -76,7 +76,7 @@ README holds the transcribed tables. Summary of the measured run
   1.24×, A 1.17×, B 1.11×, C 1.04× (parity), E 0.43×.
 - **Four threads: strata loses everything.** load 0.72×, A 0.65×,
   B 0.79×, C 0.69×, E 0.47×. strata's own 4-thread load throughput is
-  *below* its 1-thread number (293 k vs 439 k ops/s) — the single-leader
+  *below* its 1-thread number (293 k vs 439 k ops/s) - the single-leader
   commit path and the DB-mutex source capture are the bottleneck, not the
   storage format.
 - **Write amplification, identical 1 M-record load:** strata 4.53×
@@ -88,7 +88,7 @@ README holds the transcribed tables. Summary of the measured run
   sit at ~4 ms per drive-cache flush, so the difference is how many
   commits share a flush. strata's plain-`fsync` mode (85 k ops/s) is
   reported separately because macOS `fsync` does not flush the drive
-  cache — a durability-semantics footnote most benchmarks skip.
+  cache - a durability-semantics footnote most benchmarks skip.
 
 ## 7. Why we lose where we lose (the part that matters in an interview)
 
@@ -108,7 +108,7 @@ README holds the transcribed tables. Summary of the measured run
    miss probes a full index + block; RocksDB's partitioned filters and
    pinned-handle block cache keep its tail flatter.
 4. **No compression** in strata v1 costs disk footprint, not speed, with
-   both engines set to `kNoCompression` — the fair-comparison choice.
+   both engines set to `kNoCompression` - the fair-comparison choice.
 
 Where strata *wins* is also explainable rather than magic: single-threaded
 writes have a shorter code path than RocksDB's (no column families, no
@@ -123,5 +123,5 @@ doing its one job.
   uses the same `fsync` semantics in both engines (`F_FULLFSYNC` off), so
   the *relative* numbers stand.
 - 1 M × 100 B ≈ 116 MB working set fits page cache: this measures engine
-  CPU + I/O-path overhead, not disk seeks — deliberately, since both
+  CPU + I/O-path overhead, not disk seeks - deliberately, since both
   engines share the page cache advantage equally.
