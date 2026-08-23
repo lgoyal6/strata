@@ -3,7 +3,7 @@
 A leveled LSM-tree key-value store in C++20 with **provable crash
 durability**: write-ahead log, skiplist memtables, prefix-compressed
 SSTables with Bloom filters, size-tiered L0 + leveled compaction with write
-backpressure, MVCC snapshots — and a crash harness that SIGKILLs the engine
+backpressure, MVCC snapshots - and a crash harness that SIGKILLs the engine
 at randomized byte offsets inside its own `write(2)` calls and proves that
 no acknowledged write is ever lost and no torn record is ever accepted.
 
@@ -14,7 +14,7 @@ watch recovery bring back every acknowledged byte.
 > **Thesis.** In a storage engine the interesting property is not speed,
 > it's the *contract*: an acknowledged write exists after any crash, and
 > recovery never invents data. strata makes that contract mechanically
-> checkable — every byte on disk is either CRC-guarded or reconstructible,
+> checkable - every byte on disk is either CRC-guarded or reconstructible,
 > and the whole recovery surface (WAL, SSTable, MANIFEST parsers) is
 > fuzzed and crash-swept. Both sides of every benchmark trade get
 > published; a table where strata beat RocksDB at everything would mean
@@ -24,9 +24,9 @@ watch recovery bring back every acknowledged byte.
 
 12 configurations × 1,000 iterations, run on every CI push
 (`tools/crash_test`). Each iteration forks a child workload, kills it with
-a real `SIGKILL` — either at a random **byte offset inside a write(2)**
+a real `SIGKILL` - either at a random **byte offset inside a write(2)**
 (deterministic torn writes via the Env fault-injection choke point) or at
-a random **wall-clock instant** — then reopens the database and asserts:
+a random **wall-clock instant** - then reopens the database and asserts:
 (a) every acknowledged op survives with the correct value, (b) every
 recovered value passes its embedded checksum, (c) the recovered state
 equals the model at *exactly* the acknowledged prefix (± the single
@@ -54,14 +54,14 @@ Raw output: [`bench/results/crash_matrix.txt`](bench/results/crash_matrix.txt).
 
 Note what the matrix does and doesn't claim: `SIGKILL` preserves the OS
 page cache, so **all three fsync policies** must show zero loss (the WAL is
-`write(2)`-flushed before every ack) — and they do. Power-loss durability
+`write(2)`-flushed before every ack) - and they do. Power-loss durability
 is additionally claimed only for `fsync=always` (with `use_fullfsync` on
 macOS to defeat the drive cache); SIGKILL cannot test that, so the matrix
 doesn't pretend to.
 
 ### Bugs the harness actually caught
 
-The matrix is not decoration — before it went green it found two real bugs
+The matrix is not decoration - before it went green it found two real bugs
 in this engine (see `docs/DESIGN.md` §1.3, §2.2):
 
 1. **Torn-tail resurrection.** Crash tears the WAL tail → recovery stops at
@@ -72,7 +72,7 @@ in this engine (see `docs/DESIGN.md` §1.3, §2.2):
 2. **Interval-fsync buffer race.** The group-commit leader appends to the
    WAL with the DB mutex released; the background fsync tick could flush a
    half-appended buffer, leaving a CRC-invalid record mid-WAL. A
-   one-in-thousands interleaving — found at kill point ~11,700 of 12,000.
+   one-in-thousands interleaving - found at kill point ~11,700 of 12,000.
 
 ## Architecture
 
@@ -102,7 +102,7 @@ in this engine (see `docs/DESIGN.md` §1.3, §2.2):
 
 - **WAL**: one checksummed record per atomically-committed batch; file
   header carries a per-database UUID; torn tails truncated at recovery.
-  fsync policy `always` / `interval` / `never` — the durability matrix
+  fsync policy `always` / `interval` / `never` - the durability matrix
   above is exactly this knob.
 - **SSTables**: 4 KiB prefix-compressed blocks with restart points, per-block
   CRC32C, whole-file Bloom filter (10 bits/key), block index with shortest
@@ -144,16 +144,16 @@ ThreadSanitizer (`-DSTRATA_SANITIZE=thread`).
 
 `--kill bytes` sets `STRATA_CRASH_AT_BYTES=<n>`: the engine's Env counts
 every byte handed to `write(2)` and the write crossing byte *n* is torn at
-exactly that offset before the process `raise(SIGKILL)`s itself — a
+exactly that offset before the process `raise(SIGKILL)`s itself - a
 deterministic torn write at an arbitrary byte position (WAL record, SSTable
-block, MANIFEST — wherever the offset lands). A failing iteration prints its
+block, MANIFEST - wherever the offset lands). A failing iteration prints its
 exact parameters, and `crash_test repro --seed ... --ops ... --crash-at ...`
 replays a byte-mode kill deterministically.
 
 ## Fuzzing
 
-`fuzz/fuzz_wal.cc`, `fuzz_sstable.cc`, `fuzz_manifest.cc` — every parser on
-the recovery path — run under libFuzzer + ASan/UBSan with
+`fuzz/fuzz_wal.cc`, `fuzz_sstable.cc`, `fuzz_manifest.cc` - every parser on
+the recovery path - run under libFuzzer + ASan/UBSan with
 coverage-instrumented library code and corpora seeded from real files:
 
 ```
@@ -168,7 +168,7 @@ corruption is always detected, never silently accepted.
 
 YCSB core workloads, 1 M records × 100 B values, scrambled zipfian θ=0.99,
 1 M ops (200 k for E), Apple M3 Pro / APFS. Matched knobs (compression off
-in both, same buffers/cache/bloom/L0 triggers — full fairness table in
+in both, same buffers/cache/bloom/L0 triggers - full fairness table in
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)); RocksDB 11.1.2. Raw output:
 [`bench/results/ycsb.txt`](bench/results/ycsb.txt).
 
@@ -186,11 +186,11 @@ in both, same buffers/cache/bloom/L0 triggers — full fairness table in
 | E                 | 4 | 130,463 | 275,785 | **0.47×** |
 
 Write amplification on the identical load (each engine's own counters):
-**strata 4.53×, RocksDB 4.66×** — the leveled-compaction cost model lands
+**strata 4.53×, RocksDB 4.66×** - the leveled-compaction cost model lands
 where it should.
 
 Synchronous commits (50 k inserts, 4 threads, WAL sync per commit,
-`F_FULLFSYNC` in **both** engines — RocksDB always uses it for `sync=true`
+`F_FULLFSYNC` in **both** engines - RocksDB always uses it for `sync=true`
 on macOS):
 
 | engine / mode | ops/s | p50 |
@@ -202,14 +202,14 @@ on macOS):
 Group commit is doing exactly its job: at 3.5–4 ms per drive-cache flush,
 throughput is set by how many commits share one flush.
 
-**Where strata loses, and why** (the interview part —
+**Where strata loses, and why** (the interview part  - 
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) §7):
 
 - **Every 4-thread workload (0.65–0.79×).** strata's writer queue has a
   single leader doing WAL append + memtable apply; reads contend on one DB
   mutex for source capture. RocksDB pipelines WAL and memtable writes and
   spent a decade shaving its read hot path. strata's single-thread *wins*
-  flip to losses exactly when concurrency enters — that's the design gap,
+  flip to losses exactly when concurrency enters - that's the design gap,
   not noise (strata's own 4-thread load is *slower* than its 1-thread load).
 - **Scans (0.43–0.47×, p95 181 µs vs 23 µs).** Each strata scan builds a
   fresh merging iterator that eagerly opens a cursor on every live file;
@@ -222,7 +222,7 @@ throughput is set by how many commits share one flush.
 
 ## Design document
 
-[`docs/DESIGN.md`](docs/DESIGN.md) — the on-disk formats (proposed before
+[`docs/DESIGN.md`](docs/DESIGN.md) - the on-disk formats (proposed before
 any code was written), the recovery invariants, the compaction policy and
 its write-amplification model, and the durability taxonomy (SIGKILL vs
 power loss vs drive cache).
@@ -232,13 +232,13 @@ power loss vs drive cache).
 - Forward-only iterators (`Prev()` is absent, not half-implemented).
 - No block compression (benchmarks run RocksDB with compression off for
   fairness; snappy/zstd is the obvious v2 item).
-- Full-snapshot MANIFEST rewrite per version change — right at embedded
+- Full-snapshot MANIFEST rewrite per version change - right at embedded
   scale, wrong at RocksDB scale (their log-structured VersionEdit is the
   scale-up path).
 - Whole-file Bloom filters, no partitioned indexes, no column families, no
   transactions beyond the atomic `WriteBatch`.
 - macOS `fsync` does not flush the drive cache; `Options::use_fullfsync`
-  exists and is off by default, matching RocksDB — stated rather than
+  exists and is off by default, matching RocksDB - stated rather than
   hidden.
 
 ## License
