@@ -119,6 +119,62 @@ in this engine (see `docs/DESIGN.md` §1.3, §2.2):
   dir fsync → MANIFEST tmp fsync → atomic rename → dir fsync → only then
   delete WALs/SSTs. An acknowledged write is always in ≥1 durable place.
 
+## Use it in your project
+
+Both paths land on the same `strata::strata` target, so you can switch between
+them without touching your code.
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(strata
+    GIT_REPOSITORY https://github.com/lgoyal6/strata.git
+    GIT_TAG        v0.1.0)
+FetchContent_MakeAvailable(strata)
+
+target_link_libraries(your_app PRIVATE strata::strata)
+```
+
+Or install it once and find it from anywhere:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target strata
+cmake --install build --prefix /usr/local
+```
+
+```cmake
+find_package(strata 0.1 REQUIRED)
+target_link_libraries(your_app PRIVATE strata::strata)
+```
+
+Pulled in as a subproject, strata builds the library and nothing else: the
+crash harness, tools, fuzzers and the RocksDB benchmark all default off unless
+strata is the top-level project, so your configure step never needs clang or a
+RocksDB install.
+
+```cpp
+#include <strata/db.h>
+#include <strata/options.h>
+
+strata::Options opts;
+opts.create_if_missing = true;
+strata::DB* db = nullptr;
+auto st = strata::DB::open(opts, "/tmp/mydb", &db);
+
+st = db->put(strata::WriteOptions{}, "key", "value");
+std::string out;
+st = db->get(strata::ReadOptions{}, "key", &out);
+delete db;
+```
+
+The durability contract is the reason to reach for this rather than a map on
+disk. `Options::fsync_policy` defaults to `FsyncPolicy::kAlways`, which fsyncs
+the WAL before every acknowledgement, and under that policy an acknowledged
+`put` survives a `SIGKILL` at any byte offset inside the engine's own
+`write(2)`. That is the property the crash matrix below measures. Relax it to
+`kInterval` and you trade the guarantee for throughput, deliberately and
+visibly.
+
 ## Build & test
 
 ```
