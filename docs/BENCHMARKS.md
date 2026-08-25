@@ -104,7 +104,7 @@ README holds the transcribed tables. Summary of the measured run
    first `seek`; a 100-row zipfian scan amortizes that badly. RocksDB
    materializes lazily and its `Next()` is a specialized hot loop, vs
    strata's linear child scan in the merging iterator.
-3. **Read tails (p99 1.2–2×).** Whole-file bloom filters mean one filter
+3. **Read tails (p99 1.1–2×).** Whole-file bloom filters mean one filter
    miss probes a full index + block; RocksDB's partitioned filters and
    pinned-handle block cache keep its tail flatter.
 4. **No compression** in strata v1 costs disk footprint, not speed, with
