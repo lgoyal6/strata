@@ -7,6 +7,15 @@ backpressure, MVCC snapshots - and a crash harness that SIGKILLs the engine
 at randomized byte offsets inside its own `write(2)` calls and proves that
 no acknowledged write is ever lost and no torn record is ever accepted.
 
+![The crash harness killing the engine mid-write a thousand times, every acknowledged write recovered](docs/demo.gif)
+
+A thousand iterations of the crash harness, most of them ending in a real
+SIGKILL at a random byte offset inside the engine's own `write(2)`, with every
+acknowledged write recovered afterwards. Reproduce it with
+`./docs/demo-setup.sh && vhs docs/demo.tape`. Note the honest scope: this kills
+the process, not the machine, so it verifies the engine's contract rather than
+the drive's.
+
 **Live demo:** [lgoyal6.github.io/strata](https://lgoyal6.github.io/strata/), the
 real engine compiled to WebAssembly: write to it, cut its power mid-write, and
 watch recovery bring back every acknowledged byte.
