@@ -31,8 +31,9 @@ watch recovery bring back every acknowledged byte.
 
 ## The crash matrix
 
-12 configurations × 1,000 iterations, run on every CI push
-(`tools/crash_test`). Each iteration forks a child workload, kills it with
+12 configurations × 1,000 iterations (`tools/crash_test`); CI reruns the same
+12 configurations at 850 iterations each on every push, for 10,200 kill points
+a commit. Each iteration forks a child workload, kills it with
 a real `SIGKILL` - either at a random **byte offset inside a write(2)**
 (deterministic torn writes via the Env fault-injection choke point) or at
 a random **wall-clock instant** - then reopens the database and asserts:
@@ -281,7 +282,7 @@ throughput is set by how many commits share one flush.
   RocksDB's iterators are lazier and its per-`Next()` path is specialized.
   Forward-only iteration doesn't excuse this; iterator construction cost
   does most of the damage.
-- **Read tails.** p99 on read-heavy workloads runs 1.2–2× RocksDB's
+- **Read tails.** p99 on read-heavy workloads runs 1.1–2× RocksDB's
   (whole-file bloom vs partitioned filters; one shared LRU vs sharded,
   pinned cache handling).
 
