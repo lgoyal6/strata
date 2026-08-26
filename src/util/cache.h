@@ -12,7 +12,7 @@ namespace strata {
 
 // Sharded LRU cache for uncompressed data blocks. Keys are
 // (sstable file number, block offset) packed into 64 bits; SSTables are
-// immutable, so there is no invalidation — entries for deleted files simply
+// immutable, so there is no invalidation - entries for deleted files simply
 // age out. Values are shared_ptr so a block stays alive while any iterator
 // still points into it, even after eviction.
 class BlockCache {

@@ -4,7 +4,7 @@
 
 namespace strata {
 
-// xorshift64* — deterministic given a seed; used for skiplist heights and
+// xorshift64* - deterministic given a seed; used for skiplist heights and
 // test workloads (never for anything security-sensitive).
 class Random {
   public:

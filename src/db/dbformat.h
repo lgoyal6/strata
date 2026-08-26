@@ -88,7 +88,7 @@ class InternalKey {
     std::string rep_;
 };
 
-// Memtable probe key. Layout: varint32(klen) | user_key | tag — so
+// Memtable probe key. Layout: varint32(klen) | user_key | tag - so
 // memtable_key() is a full skiplist entry prefix and internal_key() is the
 // embedded internal key.
 class LookupKey {

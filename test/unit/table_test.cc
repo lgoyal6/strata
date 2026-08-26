@@ -167,7 +167,7 @@ TEST_F(TableTest, BloomFilterFalsePositiveRateReasonable) {
 }
 
 // Flip every byte of a small table: reads must never crash and never return
-// a wrong value — every flip is either detected or lands in a region whose
+// a wrong value - every flip is either detected or lands in a region whose
 // bytes don't matter (there are none by design).
 TEST_F(TableTest, EveryByteFlipIsDetected) {
     const auto contents = make_contents(50);

@@ -97,7 +97,7 @@ TEST_F(WalTest, BadMagicRejected) {
 }
 
 // The core torn-write property: truncate the log at EVERY byte offset and
-// verify recovery yields an exact record prefix — never garbage, never a
+// verify recovery yields an exact record prefix - never garbage, never a
 // partial record.
 TEST_F(WalTest, TruncateAtEveryByteYieldsExactPrefix) {
     const std::vector<std::string> payloads = {"first-record", "second-record",
