@@ -17,7 +17,21 @@
 </head>
 <body>
 
-<header class="gut">
+<nav class="topbar">
+  <a class="brand" href="https://lakshgoyal.com">Laksh Goyal<span>.</span></a>
+  <div class="navlinks">
+    <a href="https://github.com/lgoyal6/strata">GitHub</a>
+    <a href="https://www.linkedin.com/in/lakshgoyal">LinkedIn</a>
+  </div>
+</nav>
+<nav class="tabs" aria-label="Sections">
+    <a href="#sec-home">Home</a>
+    <a href="#sec-break">Break it</a>
+    <a href="#sec-poke">Poke it</a>
+    <a href="#sec-source">Source</a>
+</nav>
+
+<header id="sec-home" class="gut">
   <div>
     <div class="eyebrow">lsm-tree storage engine &middot; c++20 &middot; zero-dependency core &middot;
       <span class="led-label" id="led-label">booting engine&hellip;</span></div>
@@ -42,7 +56,7 @@
   </div>
 </header>
 
-<section id="break" class="gut">
+<section class="gut" id="sec-break">
   <div class="sec-bar">
     <span class="no">01</span><h2>Break it</h2>
     <span class="lede">write real records, arm a power cut a few hundred KB ahead, and reboot into recovery</span>
@@ -76,7 +90,7 @@
   number; the measured numbers above come from real hardware, see docs/BENCHMARKS.md.</i></p>
 </section>
 
-<section id="poke" class="gut">
+<section class="gut" id="sec-poke">
   <div class="sec-bar">
     <span class="no">02</span><h2>Poke it</h2>
     <span class="lede">your own keys land in the same memtable; the counters are the engine's own</span>
@@ -113,7 +127,7 @@
   </div>
 </section>
 
-<section id="saw" class="gut">
+<section class="gut" id="sec-source">
   <div class="sec-bar">
     <span class="no">03</span><h2>What you just saw</h2>
     <span class="lede">every behavior above is a specific piece of the engine</span>
@@ -164,5 +178,6 @@
 </footer>
 
 <script src="app.js"></script>
+<script src="nav.js"></script>
 </body>
 </html>
