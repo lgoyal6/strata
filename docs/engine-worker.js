@@ -3,7 +3,7 @@
 // Pthread note: Emscripten spawns each engine thread as a worker running THIS
 // script again (it reuses self.location), with name "em-pthread". In that
 // mode strata.js self-instantiates and runs the pthread protocol; our only
-// job is to load it and stay silent — no second instantiation, no onmessage.
+// job is to load it and stay silent: no second instantiation, no onmessage.
 importScripts('demo/strata.js');
 
 if (globalThis.name !== 'em-pthread') {
