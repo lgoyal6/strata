@@ -7,18 +7,18 @@
 // Each iteration forks a child workload process. The child performs a
 // deterministic op stream derived from (seed, op index) and acknowledges
 // each op by appending a line to an ack FILE (O_APPEND + raw write(2)) AFTER
-// DB::write returns — a file, not a pipe, because appended bytes survive
+// DB::write returns - a file, not a pipe, because appended bytes survive
 // SIGKILL in the page cache and there is no fd-inheritance to race between
 // concurrently forking workers. The parent kills the child with a real
-// SIGKILL — either at a random byte offset inside a write(2) (via the Env
+// SIGKILL - either at a random byte offset inside a write(2) (via the Env
 // fault-injection choke point, STRATA_CRASH_AT_BYTES) or at a random
-// wall-clock time — waits for it, reads the acks, reopens the database
+// wall-clock time - waits for it, reads the acks, reopens the database
 // in-process and asserts:
 //   A  every acknowledged op survives,
 //   B  every recovered value verifies its embedded checksum,
 //   C  the recovered state equals the model at EXACTLY the acked prefix or
 //      the acked prefix + the single in-flight op (single-writer child), so
-//      recovery is a prefix — nothing torn, nothing resurrected, nothing
+//      recovery is a prefix - nothing torn, nothing resurrected, nothing
 //      reordered.
 // chain mode keeps the same directory across kills (crash -> recover ->
 // continue), landing kills inside flush/compaction of real recovered state.
@@ -110,7 +110,7 @@ void apply_to_model(std::map<std::string, std::string>* model, std::uint64_t see
 // flock() lives on the open file description, so a concurrent worker's
 // fork()->exec() window briefly co-owns our LOCK fd (CLOEXEC releases it at
 // exec). That transient Busy is a multi-process-harness artifact, not an
-// engine defect — retry through it.
+// engine defect - retry through it.
 Status open_with_retry(const Options& options, const std::string& dir, DB** db) {
     Status s;
     for (int attempt = 0; attempt < 200; ++attempt) {
@@ -342,7 +342,7 @@ IterationResult run_iteration(const IterationConfig& cfg) {
             return result;
         }
     }
-    // Assertion B: every surfaced value must verify its embedded checksum —
+    // Assertion B: every surfaced value must verify its embedded checksum -
     // a torn record accepted anywhere would fail here.
     for (const auto& [key, value] : actual) {
         unsigned long long vseed, vi;

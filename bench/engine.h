@@ -10,7 +10,7 @@
 struct BenchEngine {
     virtual ~BenchEngine() = default;
     // full_fsync: on macOS, sync writes push through the drive cache
-    // (F_FULLFSYNC) — RocksDB always does this for sync=true there, so the
+    // (F_FULLFSYNC) - RocksDB always does this for sync=true there, so the
     // apples-to-apples sync comparison needs strata in the same mode.
     virtual bool open(const std::string& dir, bool sync_writes, bool full_fsync,
                       std::string* err) = 0;

@@ -1,8 +1,8 @@
 // libFuzzer target: arbitrary bytes as an SSTable. Open, point-get, and full
-// iteration must parse or reject — never crash, over-read, or loop forever.
+// iteration must parse or reject - never crash, over-read, or loop forever.
 // Every block is CRC-guarded, so most mutations die at open; to reach the
 // block/index/filter parsers, mutated tables produced by the seed corpus
-// (real tables) matter — see fuzz/run_fuzz.sh which seeds from unit-test
+// (real tables) matter - see fuzz/run_fuzz.sh which seeds from unit-test
 // artifacts.
 
 #include <cstdint>

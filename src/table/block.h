@@ -11,7 +11,7 @@ namespace strata {
 
 // Read side of a prefix-compressed block. Contents are CRC-verified before
 // construction, but the parser still treats every byte as adversarial
-// (bounds-checked varints, restart offsets validated) — fuzz_sstable feeds
+// (bounds-checked varints, restart offsets validated) - fuzz_sstable feeds
 // arbitrary bytes through here.
 class Block {
   public:

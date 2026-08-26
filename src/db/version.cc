@@ -124,7 +124,7 @@ void Version::overlapping_inputs(int level, const Slice& begin_ukey, const Slice
 namespace {
 
 // Probes one table file for the lookup key. Returns true when the search is
-// decided (found / tombstone / error) — false means "keep looking deeper".
+// decided (found / tombstone / error) - false means "keep looking deeper".
 bool probe_file(TableCache* tc, const InternalKeyComparator* /*icmp*/, const FileMeta& f,
                 const LookupKey& lkey, std::string* value, Status* result) {
     std::shared_ptr<TableReader> reader;

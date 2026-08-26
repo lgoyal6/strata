@@ -10,7 +10,7 @@
 namespace strata {
 
 // Replays a WAL segment. Stops at the first torn/corrupt record (treated as
-// the tail, per docs/DESIGN.md §1.2) — a bad record is never returned.
+// the tail, per docs/DESIGN.md §1.2) - a bad record is never returned.
 class WalReader {
   public:
     // expected_uuid == 0 skips the UUID check (used before the MANIFEST's

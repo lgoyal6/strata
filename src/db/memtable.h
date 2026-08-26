@@ -14,7 +14,7 @@ namespace strata {
 
 // Arena-backed sorted run of internal-key entries. Held by shared_ptr:
 // the DB (as active or immutable), the flush job, and every in-flight
-// read/iterator keep it — and therefore its arena — alive.
+// read/iterator keep it - and therefore its arena - alive.
 //
 // Entry layout in the arena:
 //   varint32 internal_key_len | user_key | fixed64 tag | varint32 vlen | value

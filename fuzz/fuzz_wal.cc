@@ -1,8 +1,8 @@
 // libFuzzer target: arbitrary bytes as a WAL file. The reader must parse or
-// reject — never crash, over-read, or accept a record whose CRC does not
+// reject - never crash, over-read, or accept a record whose CRC does not
 // match. Records that do parse must satisfy the WriteBatch structural check
 // contract the recovery path relies on (check() is called on every replayed
-// record, so a batch that parses here but fails check() is fine — what must
+// record, so a batch that parses here but fails check() is fine - what must
 // hold is that neither step trips ASan/UBSan).
 
 #include <cstdint>

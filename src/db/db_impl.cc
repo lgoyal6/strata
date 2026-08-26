@@ -103,7 +103,7 @@ Status DBImpl::init() {
 
 // ===========================================================================
 // Recovery (docs/DESIGN.md §1.3): replay every record of every WAL >=
-// min_wal_number — no sequence filtering.
+// min_wal_number - no sequence filtering.
 // ===========================================================================
 
 Status DBImpl::recover_wal_files() {
@@ -143,7 +143,7 @@ Status DBImpl::recover_wal_files() {
             s = WriteBatchInternal::check(Slice(record));
             if (!s.ok()) {
                 // CRC-valid but structurally bad: real corruption, not a torn
-                // tail — refuse to guess.
+                // tail - refuse to guess.
                 return s;
             }
             WriteBatch batch;

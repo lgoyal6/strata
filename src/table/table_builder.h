@@ -14,7 +14,7 @@
 namespace strata {
 
 // Writes an SSTable (docs/DESIGN.md §1.1). Caller syncs + closes the file
-// after finish() — the durability ordering lives in the flush/compaction
+// after finish() - the durability ordering lives in the flush/compaction
 // code, not here.
 class TableBuilder {
   public:

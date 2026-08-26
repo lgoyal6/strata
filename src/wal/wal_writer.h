@@ -25,7 +25,7 @@ class WalWriter {
     Status add_record(const Slice& payload);
 
     // add_record runs with the DB mutex RELEASED (group-commit leader), and
-    // the interval-fsync tick calls sync() concurrently — mu_ keeps the
+    // the interval-fsync tick calls sync() concurrently - mu_ keeps the
     // WritableFile's buffer single-writer. A sync must never observe (and
     // flush) a half-appended record.
     Status sync(bool full_fsync) {
