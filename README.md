@@ -1,3 +1,11 @@
+<a href="https://lgoyal6.github.io/strata/">
+  <img alt="strata - open the live demo" src="docs/og.png">
+</a>
+
+**[Open the live demo](https://lgoyal6.github.io/strata/)** - The
+real engine compiled to WebAssembly: write to it, cut its power mid-write, and
+watch recovery bring back every acknowledged byte.
+
 # strata
 
 A leveled LSM-tree key-value store in C++20 with **provable crash
@@ -15,10 +23,6 @@ acknowledged write recovered afterwards. Reproduce it with
 `./docs/demo-setup.sh && vhs docs/demo.tape`. Note the honest scope: this kills
 the process, not the machine, so it verifies the engine's contract rather than
 the drive's.
-
-**Live demo:** [lgoyal6.github.io/strata](https://lgoyal6.github.io/strata/), the
-real engine compiled to WebAssembly: write to it, cut its power mid-write, and
-watch recovery bring back every acknowledged byte.
 
 > **Thesis.** In a storage engine the interesting property is not speed,
 > it's the *contract*: an acknowledged write exists after any crash, and
