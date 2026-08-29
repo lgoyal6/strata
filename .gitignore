@@ -9,3 +9,6 @@ fuzz/corpus/*/
 crash-*
 leak-*
 timeout-*
+
+# graphify knowledge graph (local index, not source)
+graphify-out/
