@@ -189,7 +189,41 @@ the WAL before every acknowledgement, and under that policy an acknowledged
 `kInterval` and you trade the guarantee for throughput, deliberately and
 visibly.
 
+A whole program rather than a fragment lives in
+[`examples/eventlog`](examples/eventlog): a per-device event log that batches
+appends, scans one device's time window back with a prefix bound, holds a
+snapshot open across a concurrent write, and reopens the database to prove the
+events are still there. It is deliberately **not** part of this build - it
+configures on its own against an installed strata, because an in-tree
+`add_subdirectory` would prove nothing about the package you actually ship. CI
+runs exactly this sequence on every push, and the example exits nonzero if any
+of its own invariants disagree:
+
+```bash
+cmake -S . -B build/inst -DCMAKE_BUILD_TYPE=Release
+cmake --build build/inst --target strata
+cmake --install build/inst --prefix /tmp/strata-prefix
+cmake -S examples/eventlog -B /tmp/eventlog -DCMAKE_PREFIX_PATH=/tmp/strata-prefix
+cmake --build /tmp/eventlog && /tmp/eventlog/eventlog /tmp/eventlog-db
+```
+
+```
+wrote 6000 events (2000 ticks x 3 devices)
+sensor-a: 2000 events total, 500 in the last window
+snapshot sees 2000, current sees 2050 (expected 2000 and 2050)
+after reopen: 2050 events
+OK
+```
+
 ## Build & test
+
+Needs CMake ≥ 3.24, Ninja, and a C++20 compiler reachable as `clang++`. The
+presets name that generator and that compiler explicitly, so CMake will stop at
+`CMAKE_MAKE_PROGRAM is not set` rather than silently falling back to make if
+Ninja is missing. On macOS: `brew install cmake ninja` (Apple clang from the
+Xcode command line tools is new enough). On Debian/Ubuntu:
+`apt install cmake ninja-build clang`. Nothing else is fetched at configure
+time except googletest, which CMake downloads itself.
 
 ```
 cmake --preset release && cmake --build --preset release
