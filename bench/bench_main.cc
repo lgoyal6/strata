@@ -10,6 +10,7 @@
 // Key selection: scrambled zipfian, theta 0.99 (YCSB default).
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -97,7 +98,13 @@ int main(int argc, char** argv) {
     std::atomic<bool> failed{false};
     std::atomic<std::uint64_t> insert_sequence{records}; // workload e appends
 
+    // Mixed workloads (e = 95% scan / 5% insert) hide which operation owns a
+    // tail percentile, so latencies are bucketed by operation kind as well as
+    // pooled. Without this split an insert-path stall reads as a scan tail.
+    enum OpKind { kRead = 0, kUpdate, kScan, kInsert, kOpKinds };
+    static const char* const kOpNames[kOpKinds] = {"read", "update", "scan", "insert"};
     std::vector<std::vector<std::uint64_t>> latencies(threads);
+    std::vector<std::array<std::vector<std::uint64_t>, kOpKinds>> by_kind(threads);
     const std::uint64_t wall_start = now_ns();
 
     std::vector<std::thread> pool;
@@ -106,11 +113,13 @@ int main(int argc, char** argv) {
             ycsb::Rng rng(seed * 1315423911u + t + 1);
             const std::uint64_t ops = total_ops / threads;
             auto& lat = latencies[t];
+            auto& kinds = by_kind[t];
             lat.reserve(ops);
             std::string value_scratch;
 
             for (std::uint64_t i = 0; i < ops && !failed.load(std::memory_order_relaxed); ++i) {
                 bool ok = true;
+                int kind = kInsert;
                 const std::uint64_t op_start = now_ns();
                 if (workload == "load") {
                     // Partitioned sequential insert of the whole key space.
@@ -119,13 +128,16 @@ int main(int argc, char** argv) {
                 } else {
                     const int dice = static_cast<int>(rng.uniform(100));
                     if (dice < mix.read_pct) {
+                        kind = kRead;
                         bool found = false;
                         ok = engine->get(ycsb::key_name(zipf.next_scrambled(rng)), &value_scratch,
                                          &found);
                     } else if (dice < mix.read_pct + mix.update_pct) {
+                        kind = kUpdate;
                         ok = engine->put(ycsb::key_name(zipf.next_scrambled(rng)),
                                          ycsb::make_value(rng, value_size));
                     } else if (dice < mix.read_pct + mix.update_pct + mix.scan_pct) {
+                        kind = kScan;
                         const int len = 1 + static_cast<int>(rng.uniform(100));
                         ok = engine->scan(ycsb::key_name(zipf.next_scrambled(rng)), len) >= 0;
                     } else {
@@ -134,7 +146,9 @@ int main(int argc, char** argv) {
                         ok = engine->put(ycsb::key_name(fresh), ycsb::make_value(rng, value_size));
                     }
                 }
-                lat.push_back(now_ns() - op_start);
+                const std::uint64_t elapsed = now_ns() - op_start;
+                lat.push_back(elapsed);
+                kinds[kind].push_back(elapsed);
                 if (!ok) {
                     failed.store(true, std::memory_order_relaxed);
                 }
@@ -173,6 +187,24 @@ int main(int argc, char** argv) {
                 "p999=%.1fus\n",
                 secs, static_cast<double>(all.size()) / secs, pct(0.50), pct(0.95), pct(0.99),
                 pct(0.999));
+    for (int k = 0; k < kOpKinds; ++k) {
+        std::vector<std::uint64_t> v;
+        for (auto& per_thread : by_kind) {
+            v.insert(v.end(), per_thread[k].begin(), per_thread[k].end());
+        }
+        if (v.empty()) {
+            continue;
+        }
+        std::sort(v.begin(), v.end());
+        const auto kp = [&](double p) {
+            const std::size_t i =
+                std::min(v.size() - 1, static_cast<std::size_t>(p * static_cast<double>(v.size())));
+            return static_cast<double>(v[i]) / 1000.0;
+        };
+        std::printf("  %-6s n=%-8zu p50=%.1fus p95=%.1fus p99=%.1fus p999=%.1fus max=%.1fus\n",
+                    kOpNames[k], v.size(), kp(0.50), kp(0.95), kp(0.99), kp(0.999),
+                    static_cast<double>(v.back()) / 1000.0);
+    }
     std::printf("  %s\n", engine->stats_summary().c_str());
     engine->close();
     return 0;
