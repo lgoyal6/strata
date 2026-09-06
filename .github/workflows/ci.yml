@@ -22,8 +22,33 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: sudo apt-get update && sudo apt-get install -y clang-format-18
       - run: |
-          find include src test tools fuzz bench -name '*.h' -o -name '*.cc' | \
+          find include src test tools fuzz bench examples -name '*.h' -o -name '*.cc' | \
             xargs clang-format-18 --dry-run --Werror
+
+  # Proves the *installed* package is usable, which an in-tree
+  # add_subdirectory build does not: install to a prefix, then configure
+  # examples/eventlog on its own against only that prefix and run it. The
+  # example asserts its own invariants (range scan, snapshot isolation,
+  # durability across reopen) and exits nonzero on mismatch.
+  consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build
+      - name: build and install strata
+        run: |
+          cmake -S . -B build/inst -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=clang++ -DSTRATA_INSTALL=ON \
+            -DSTRATA_BUILD_TESTS=OFF -DSTRATA_BUILD_TOOLS=OFF
+          cmake --build build/inst
+          cmake --install build/inst --prefix "${RUNNER_TEMP}/prefix"
+      - name: build the example against the installed package only
+        run: |
+          cmake -S examples/eventlog -B "${RUNNER_TEMP}/eventlog" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/prefix"
+          cmake --build "${RUNNER_TEMP}/eventlog"
+          "${RUNNER_TEMP}/eventlog/eventlog" "${RUNNER_TEMP}/eventlog-db"
 
   # The acceptance gate: >=10k randomized SIGKILL points across the full
   # {fsync policy} x {kill mechanism} x {fresh, chained} matrix, zero
