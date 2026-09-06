@@ -1,5 +1,7 @@
 #include "db/version.h"
 
+#include "util/scan_probe.h"
+
 #include <algorithm>
 #include <cassert>
 #include <random>
@@ -312,6 +314,7 @@ void Version::add_iterators(std::vector<std::unique_ptr<Iterator>>* iters) {
         const Status s = tc->find_table((*it)->number, (*it)->file_size, &reader);
         if (s.ok()) {
             iters->emplace_back(reader->new_iterator());
+            STRATA_PROBE_ADD(l0_children, 1);
         }
         // An unopenable live file will surface as an error on read paths;
         // iterators fail via status when actually touched.

@@ -2,6 +2,8 @@
 
 #include <cassert>
 
+#include "util/scan_probe.h"
+
 namespace strata {
 namespace {
 
@@ -9,7 +11,9 @@ class MergingIterator final : public Iterator {
   public:
     MergingIterator(const InternalKeyComparator* cmp,
                     std::vector<std::unique_ptr<Iterator>> children)
-        : cmp_(cmp), children_(std::move(children)) {}
+        : cmp_(cmp), children_(std::move(children)) {
+        STRATA_PROBE_ADD(children, children_.size());
+    }
 
     bool valid() const override {
         return current_ != nullptr;
@@ -32,6 +36,7 @@ class MergingIterator final : public Iterator {
     void next() override {
         assert(valid());
         current_->next();
+        STRATA_PROBE_ADD(internal_next, 1);
         find_smallest();
     }
 
@@ -60,6 +65,7 @@ class MergingIterator final : public Iterator {
     // concatenating iterator per level), so a heap buys nothing here.
     void find_smallest() {
         Iterator* smallest = nullptr;
+        STRATA_PROBE_ADD(compares, children_.size());
         for (auto& child : children_) {
             if (child->valid() &&
                 (smallest == nullptr || cmp_->compare(child->key(), smallest->key()) < 0)) {

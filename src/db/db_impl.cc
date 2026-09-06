@@ -1,5 +1,7 @@
 #include "db/db_impl.h"
 
+#include "util/scan_probe.h"
+
 #include <algorithm>
 #include <cassert>
 
@@ -453,6 +455,7 @@ Status DBImpl::get(const ReadOptions& opt, const Slice& key, std::string* value)
 }
 
 Iterator* DBImpl::new_iterator(const ReadOptions& opt) {
+    STRATA_PROBE_ADD(scans, 1);
     SequenceNumber seq;
     std::shared_ptr<MemTable> mem;
     std::vector<std::shared_ptr<MemTable>> imms;

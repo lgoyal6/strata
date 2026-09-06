@@ -2,7 +2,9 @@
 #include <sstream>
 
 #include "bench/engine.h"
+
 #include "strata/db.h"
+#include "util/scan_probe.h"
 
 namespace {
 
@@ -76,6 +78,27 @@ class StrataEngine final : public BenchEngine {
                     ? static_cast<double>(s.block_cache_hits) /
                           static_cast<double>(s.block_cache_hits + s.block_cache_misses)
                     : 0.0);
+#ifdef STRATA_SCAN_PROBE
+        {
+            auto& c = strata::probe::counters();
+            const double scans = static_cast<double>(c.scans.load());
+            if (scans > 0) {
+                out << "\n  scan-probe: scans=" << c.scans.load()
+                    << " children/scan=" << (static_cast<double>(c.children.load()) / scans)
+                    << " l0children/scan=" << (static_cast<double>(c.l0_children.load()) / scans)
+                    << " blockreads/scan=" << (static_cast<double>(c.block_reads.load()) / scans)
+                    << " blockmisses/scan=" << (static_cast<double>(c.block_misses.load()) / scans)
+                    << " internal_next/scan="
+                    << (static_cast<double>(c.internal_next.load()) / scans)
+                    << " skipped/scan=" << (static_cast<double>(c.skipped.load()) / scans)
+                    << " skipped_seq/scan=" << (static_cast<double>(c.skipped_seq.load()) / scans)
+                    << " skipped_key/scan=" << (static_cast<double>(c.skipped_key.load()) / scans)
+                    << " max_same_key_run=" << c.max_run.load()
+                    << " skip_seeks/scan=" << (static_cast<double>(c.skip_seeks.load()) / scans)
+                    << " compares/scan=" << (static_cast<double>(c.compares.load()) / scans);
+            }
+        }
+#endif
         return out.str();
     }
 
