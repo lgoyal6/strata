@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <memory>
 #include <sstream>
 
@@ -13,7 +14,15 @@ class StrataEngine final : public BenchEngine {
     bool open(const std::string& dir, bool sync_writes, bool full_fsync,
               std::string* err) override {
         strata::Options options;
+        // Bench-only override: a smaller memtable means more L0 files, which is
+        // the knob that varies merge fan-in for the linear-vs-heap comparison.
         options.write_buffer_size = 8u << 20;
+        if (const char* wb = std::getenv("STRATA_BENCH_WRITE_BUFFER_MB")) {
+            const unsigned long mb = std::strtoul(wb, nullptr, 10);
+            if (mb > 0) {
+                options.write_buffer_size = static_cast<std::size_t>(mb) << 20;
+            }
+        }
         options.block_cache_bytes = 64u << 20;
         options.bloom_bits_per_key = 10;
         options.fsync_policy =
