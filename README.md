@@ -244,16 +244,27 @@ in both, same buffers/cache/bloom/L0 triggers - full fairness table in
 
 | workload | threads | strata ops/s | RocksDB ops/s | strata/RocksDB |
 |---|---:|---:|---:|---:|
-| load (1M inserts) | 1 | 438,529 | 353,679 | **1.24×** |
-| A (50/50 r/w)     | 1 | 495,959 | 425,261 | **1.17×** |
-| B (95/5)          | 1 | 694,585 | 628,504 | **1.11×** |
-| C (read-only)     | 1 | 798,724 | 764,631 | 1.04× |
-| E (95% scans)     | 1 | 33,907  | 79,098  | **0.43×** |
-| load              | 4 | 292,968 | 404,424 | **0.72×** |
-| A                 | 4 | 449,064 | 694,836 | **0.65×** |
-| B                 | 4 | 1,548,368 | 1,949,827 | 0.79× |
-| C                 | 4 | 1,831,395 | 2,666,157 | **0.69×** |
-| E                 | 4 | 130,463 | 275,785 | **0.47×** |
+| load (1M inserts) | 1 | 439,851 | 361,354 | **1.22×** |
+| A (50/50 r/w)     | 1 | 523,065 | 421,507 | **1.24×** |
+| B (95/5)          | 1 | 778,132 | 597,128 | **1.30×** |
+| C (read-only)     | 1 | 848,247 | 728,189 | **1.16×** |
+| E (95% scans)     | 1 | 107,470 | 75,196  | **1.43×** |
+| load              | 4 | 315,129 | 379,757 | **0.83×** |
+| A                 | 4 | 448,657 | 654,504 | **0.69×** |
+| B                 | 4 | 1,420,535 | 1,890,267 | 0.75× |
+| C                 | 4 | 1,768,752 | 2,492,955 | **0.71×** |
+| E                 | 4 | 286,636 | 264,579 | **1.08×** |
+
+Every row above comes from one matrix run on one host (Apple M3 Pro, 18 GB, macOS 26.5.2,
+APFS), so the rows are comparable with each other. Workload E percentiles are scan-only:
+the harness reports each operation kind separately, because E is 95% scan / 5% insert and
+a pooled percentile hides which one owns the tail.
+
+**One row does not repeat: E at 4 threads.** Re-measuring that ratio on a 1 M-record
+store gave 1.28× in strata's favour in one quiet window and 0.58×, against strata, in
+another, with a 1.8× spread inside a single engine and configuration. The 1.08× above is
+one run of the matrix, not a resolved number, and this machine cannot settle it. The
+single-threaded rows are the stable ones. See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) §6.
 
 Write amplification on the identical load (each engine's own counters):
 **strata 4.53×, RocksDB 4.66×** - the leveled-compaction cost model lands
@@ -275,17 +286,32 @@ throughput is set by how many commits share one flush.
 **Where strata loses, and why** (the interview part  - 
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) §7):
 
-- **Every 4-thread workload (0.65–0.79×).** strata's writer queue has a
+- **Every 4-thread workload except scans (0.69–0.83×).** strata's writer queue has a
   single leader doing WAL append + memtable apply; reads contend on one DB
   mutex for source capture. RocksDB pipelines WAL and memtable writes and
   spent a decade shaving its read hot path. strata's single-thread *wins*
   flip to losses exactly when concurrency enters - that's the design gap,
   not noise (strata's own 4-thread load is *slower* than its 1-thread load).
-- **Scans (0.43–0.47×, p95 181 µs vs 23 µs).** Each strata scan builds a
-  fresh merging iterator that eagerly opens a cursor on every live file;
-  RocksDB's iterators are lazier and its per-`Next()` path is specialized.
-  Forward-only iteration doesn't excuse this; iterator construction cost
-  does most of the damage.
+  Workload E is the apparent exception since the scan fix, at 1.08× in this
+  matrix, but that particular ratio does not repeat on this host (see the
+  caveat under the table) and should not be read as a win. The range above is
+  the current matrix, not the pre-fix one.
+- **Scans - fixed, and the original diagnosis was wrong.** These were
+  0.43-0.47× with p95 169 µs vs 22 µs. The stated cause used to be eager
+  cursor construction over every live file. Measuring it (opt-in counters,
+  `-DSTRATA_SCAN_PROBE=ON`) showed that was not it: a scan has **4 children,
+  one of them L0**, so construction is nearly free. The real cost was that a
+  scan yielding ~50 rows did **522 internal advances, 471 of them stepping
+  over superseded versions of keys already yielded** - one hot key had 4,077
+  obsolete versions walked one at a time, each costing an N-way merge
+  comparison. Zipfian updates pile versions on a small hot set and nothing
+  reclaims them during a read-heavy phase, which is why only the tail broke:
+  baseline p50 already matched RocksDB. `DBIter` now replaces a long version
+  run with one targeted seek past the yielded key (threshold 16, swept 4-128).
+  Per scan: advances 522 → 64, skipped versions 472 → 13, comparisons
+  2,092 → 260. Scan p95 170 µs → **15.8 µs**, p99 186 µs → **19.2 µs**.
+  The write-side cause is untouched: this bounds the read symptom, it does
+  not make compaction reclaim versions sooner.
 - **Read tails.** p99 on read-heavy workloads runs 1.1–2× RocksDB's
   (whole-file bloom vs partitioned filters; one shared LRU vs sharded,
   pinned cache handling).

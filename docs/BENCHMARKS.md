@@ -72,13 +72,21 @@ Raw output: [`bench/results/ycsb.txt`](../bench/results/ycsb.txt); the
 README holds the transcribed tables. Summary of the measured run
 (2026-07-27, idle machine):
 
-- **Single-threaded: strata wins or ties everything but scans.** load
-  1.24×, A 1.17×, B 1.11×, C 1.04× (parity), E 0.43×.
-- **Four threads: strata loses everything.** load 0.72×, A 0.65×,
-  B 0.79×, C 0.69×, E 0.47×. strata's own 4-thread load throughput is
+- **Single-threaded: strata wins everything.** load 1.22×, A 1.24×,
+  B 1.30×, C 1.16×, E 1.43×. E was 0.43× before the scan fix below.
+- **Four threads: strata loses everything except scans.** load 0.83×,
+  A 0.69×, B 0.75×, C 0.71×, E 1.08×. E was 0.47× before the fix. strata's own 4-thread load throughput is
   *below* its 1-thread number (293 k vs 439 k ops/s) - the single-leader
   commit path and the DB-mutex source capture are the bottleneck, not the
   storage format.
+  **Caveat on the 4-thread E ratio specifically: this host cannot resolve
+  it.** Repeating the 4-thread workload-E ratio on a 1 M-record store gave
+  **1.28× in strata's favour in one quiet window and 0.58×, against strata,
+  in another**, and a third block showed a 1.8× spread within a single
+  engine and configuration. The 1.08× above is one run of the matrix and is
+  reported for completeness, not as a resolved result; the single-threaded
+  comparisons are the stable ones. Fixing this needs a quiet machine with
+  more cores, not another run here.
 - **Write amplification, identical 1 M-record load:** strata 4.53×
   (137 MB WAL + 116 MB flush + 264 MB compaction / 114 MB payload),
   RocksDB 4.66× (0.13 GB WAL + 0.111 GB flush + 0.29 GB compaction /
@@ -99,11 +107,23 @@ README holds the transcribed tables. Summary of the measured run
    writers, and reads through a lock-free SuperVersion. The fix path is
    known (pipelined commit, per-shard source capture) and deliberately out
    of v1 scope.
-2. **Scans (0.43–0.47×; p95 181 µs vs 23 µs).** `new_iterator` eagerly
-   opens a cursor on the memtables and *every live table file* before the
-   first `seek`; a 100-row zipfian scan amortizes that badly. RocksDB
-   materializes lazily and its `Next()` is a specialized hot loop, vs
-   strata's linear child scan in the merging iterator.
+2. **Scans: FIXED, and this diagnosis was wrong.** The claim used to be
+   that `new_iterator` eagerly opens a cursor on the memtables and every
+   live table file, and that a short zipfian scan amortizes that badly.
+   Instrumenting it (`-DSTRATA_SCAN_PROBE=ON`) showed otherwise: a scan
+   builds **4 children, one of them the single L0 file**, so construction
+   is nearly free. The cost was that a scan returning about 50 rows made
+   **522 internal advances, 471 of them stepping over superseded versions
+   of keys it had already yielded**, one hot key carrying 4,077 of them.
+   `skipped_seq = 0`, so snapshot visibility contributed nothing. Zipfian
+   updates pile versions on a small hot set and nothing reclaims them
+   during a read-heavy phase, which is why only the tail broke: baseline
+   p50 already matched RocksDB. `DBIter` now replaces a long version run
+   with one targeted seek past the yielded key. Scan p95 170 µs → 15.8 µs,
+   p99 186 µs → 19.2 µs, throughput 2.92×. Raw output:
+   [`bench/results/ycsb_skipfix_matrix.txt`](../bench/results/ycsb_skipfix_matrix.txt).
+   The write-side cause is untouched: this bounds the read symptom, it does
+   not make compaction reclaim versions sooner.
 3. **Read tails (p99 1.1–2×).** Whole-file bloom filters mean one filter
    miss probes a full index + block; RocksDB's partitioned filters and
    pinned-handle block cache keep its tail flatter.
