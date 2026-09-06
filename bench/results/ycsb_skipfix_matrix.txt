@@ -1,0 +1,51 @@
+===== skip-seek OFF (baseline) =====
+## off threads=1
+   load    wall=2.13s throughput=469997 ops/s p50=1.9us p95=2.8us p99=4.7us p999=10.0us
+   a       wall=1.85s throughput=539623 ops/s p50=1.9us p95=4.1us p99=5.1us p999=9.4us
+   b       wall=1.28s throughput=783171 ops/s p50=0.6us p95=3.7us p99=4.6us p999=8.0us
+   c       wall=1.17s throughput=856067 ops/s p50=0.5us p95=3.5us p99=4.1us p999=7.0us
+   e       wall=5.43s throughput=36814 ops/s p50=11.5us p95=169.9us p99=186.0us p999=211.6us
+   e       scan   n=190074   p50=11.9us p95=170.5us p99=186.3us p999=212.1us max=366.4us
+   e       insert n=9926     p50=2.8us p95=7.2us p99=13.4us p999=19.6us max=28.8us
+## off threads=4
+   load    wall=3.19s throughput=313442 ops/s p50=13.7us p95=23.0us p99=28.9us p999=65.8us
+   a       wall=2.25s throughput=445194 ops/s p50=6.1us p95=22.1us p99=28.4us p999=62.6us
+   b       wall=0.67s throughput=1494545 ops/s p50=1.9us p95=7.6us p99=13.8us p999=30.3us
+   c       wall=0.54s throughput=1843535 ops/s p50=1.8us p95=5.9us p99=9.3us p999=21.1us
+   e       wall=1.67s throughput=119463 ops/s p50=14.4us p95=208.8us p99=219.8us p999=278.2us
+   e       scan   n=190064   p50=14.8us p95=209.4us p99=220.1us p999=281.2us max=522.8us
+   e       insert n=9936     p50=3.4us p95=7.8us p99=13.0us p999=51.4us max=91.8us
+===== skip-seek ON (threshold 16) =====
+## on threads=1
+   load    wall=2.27s throughput=439851 ops/s p50=2.0us p95=3.4us p99=5.6us p999=12.5us
+   a       wall=1.91s throughput=523065 ops/s p50=1.9us p95=4.2us p99=5.4us p999=10.6us
+   b       wall=1.29s throughput=778132 ops/s p50=0.6us p95=3.7us p99=4.7us p999=8.7us
+   c       wall=1.18s throughput=848247 ops/s p50=0.5us p95=3.5us p99=4.3us p999=8.5us
+   e       wall=1.86s throughput=107470 ops/s p50=9.0us p95=15.6us p99=19.1us p999=25.5us
+   e       scan   n=190074   p50=9.2us p95=15.8us p99=19.2us p999=25.7us max=169.6us
+   e       insert n=9926     p50=2.5us p95=6.0us p99=10.0us p999=15.7us max=22.6us
+## on threads=4
+   load    wall=3.17s throughput=315129 ops/s p50=13.7us p95=23.0us p99=29.0us p999=68.7us
+   a       wall=2.23s throughput=448657 ops/s p50=6.1us p95=22.2us p99=29.9us p999=68.9us
+   b       wall=0.70s throughput=1420535 ops/s p50=1.9us p95=8.1us p99=15.7us p999=41.8us
+   c       wall=0.57s throughput=1768752 ops/s p50=1.8us p95=6.1us p99=9.6us p999=22.5us
+   e       wall=0.70s throughput=286636 ops/s p50=13.5us p95=22.3us p99=29.1us p999=68.6us
+   e       scan   n=190064   p50=13.8us p95=22.5us p99=29.2us p999=68.6us max=286.4us
+   e       insert n=9936     p50=3.4us p95=9.1us p99=15.6us p999=65.2us max=246.1us
+===== RocksDB reference =====
+## rocksdb threads=1
+   load    wall=2.77s throughput=361354 ops/s p50=2.3us p95=3.2us p99=5.4us p999=10.9us
+   a       wall=2.37s throughput=421507 ops/s p50=2.4us p95=4.4us p99=5.7us p999=10.5us
+   b       wall=1.67s throughput=597128 ops/s p50=1.0us p95=4.0us p99=5.0us p999=9.5us
+   c       wall=1.37s throughput=728189 ops/s p50=1.0us p95=3.3us p99=4.0us p999=5.9us
+   e       wall=2.66s throughput=75196 ops/s p50=12.7us p95=23.8us p99=28.1us p999=50.3us
+   e       scan   n=190074   p50=13.1us p95=23.9us p99=28.2us p999=51.2us max=1112.5us
+   e       insert n=9926     p50=4.0us p95=6.5us p99=10.9us p999=38.4us max=10128.9us
+## rocksdb threads=4
+   load    wall=2.63s throughput=379757 ops/s p50=7.6us p95=12.2us p99=34.1us p999=352.2us
+   a       wall=1.53s throughput=654504 ops/s p50=4.9us p95=10.1us p99=20.6us p999=207.8us
+   b       wall=0.53s throughput=1890267 ops/s p50=1.1us p95=4.8us p99=7.3us p999=30.1us
+   c       wall=0.40s throughput=2492955 ops/s p50=1.2us p95=3.8us p99=4.5us p999=10.7us
+   e       wall=0.76s throughput=264579 ops/s p50=14.3us p95=26.5us p99=31.8us p999=88.8us
+   e       scan   n=190064   p50=14.7us p95=26.6us p99=31.9us p999=88.3us max=704.5us
+   e       insert n=9936     p50=4.1us p95=8.6us p99=14.3us p999=309.4us max=572.2us
