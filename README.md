@@ -193,7 +193,7 @@ visibly.
 
 ```
 cmake --preset release && cmake --build --preset release
-ctest --preset release                    # 46 tests incl. model-based fuzzer
+ctest --preset release                    # 51 tests incl. model-based fuzzer
 cmake --preset dev && ...                 # ASan/UBSan (Linux/CI)
 cmake --preset dev-mac && ...             # ASan/UBSan via brew LLVM (macOS)
 ```
