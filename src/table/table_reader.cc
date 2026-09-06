@@ -1,5 +1,7 @@
 #include "table/table_reader.h"
 
+#include "util/scan_probe.h"
+
 #include "table/bloom.h"
 #include "util/coding.h"
 #include "util/crc32c.h"
@@ -74,6 +76,7 @@ Status TableReader::read_raw(const BlockHandle& handle, std::string* out) const 
 
 Status TableReader::read_block(const BlockHandle& handle, std::shared_ptr<const Block>* out) const {
     const std::uint64_t cache_key = BlockCache::make_key(file_number_, handle.offset);
+    STRATA_PROBE_ADD(block_reads, 1);
     if (block_cache_ != nullptr) {
         if (auto cached = block_cache_->lookup(cache_key)) {
             auto block = std::make_shared<const Block>(std::move(cached));
@@ -84,6 +87,7 @@ Status TableReader::read_block(const BlockHandle& handle, std::shared_ptr<const 
             return Status::okay();
         }
     }
+    STRATA_PROBE_ADD(block_misses, 1);
     auto contents = std::make_shared<std::string>();
     Status s = read_raw(handle, contents.get());
     if (!s.ok()) {

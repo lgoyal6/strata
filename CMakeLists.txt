@@ -20,6 +20,7 @@ option(STRATA_BUILD_TESTS "Build unit tests" ${STRATA_DEFAULT_EXTRAS})
 option(STRATA_BUILD_TOOLS "Build crash harness and dump tool" ${STRATA_DEFAULT_EXTRAS})
 option(STRATA_BUILD_FUZZERS "Build libFuzzer targets (clang only)" OFF)
 option(STRATA_BUILD_BENCH "Build YCSB benchmark (needs RocksDB for the baseline)" OFF)
+option(STRATA_SCAN_PROBE "Compile in scan-path attribution counters (profiling builds only)" OFF)
 option(STRATA_INSTALL "Generate install and package-config rules" ${STRATA_DEFAULT_EXTRAS})
 
 include(GNUInstallDirs)
@@ -34,6 +35,7 @@ add_library(strata STATIC
     src/util/env.cc
     src/util/cache.cc
     src/util/status.cc
+    src/util/scan_probe.cc
     src/wal/wal_writer.cc
     src/wal/wal_reader.cc
     src/table/block_builder.cc
@@ -60,6 +62,9 @@ target_include_directories(strata
 # switch between FetchContent and find_package without touching its code.
 add_library(strata::strata ALIAS strata)
 target_compile_features(strata PUBLIC cxx_std_20)
+if(STRATA_SCAN_PROBE)
+    target_compile_definitions(strata PUBLIC STRATA_SCAN_PROBE)
+endif()
 target_link_libraries(strata PRIVATE strata_warnings)
 find_package(Threads REQUIRED)
 target_link_libraries(strata PUBLIC Threads::Threads)

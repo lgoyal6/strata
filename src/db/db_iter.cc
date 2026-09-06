@@ -1,5 +1,7 @@
 #include "db/db_iter.h"
 
+#include "util/scan_probe.h"
+
 #include <cassert>
 
 namespace strata {
@@ -66,10 +68,19 @@ class DBIter final : public Iterator {
             // Visibility BEFORE type: an invisible tombstone must not hide a
             // visible older Put.
             if (pik.sequence > seq_) {
+                STRATA_PROBE_ADD(skipped, 1);
+                STRATA_PROBE_ADD(skipped_seq, 1);
                 internal_->next();
                 continue;
             }
             if (skipping && pik.user_key.compare(Slice(saved_key_)) <= 0) {
+                STRATA_PROBE_ADD(skipped, 1);
+                STRATA_PROBE_ADD(skipped_key, 1);
+#ifdef STRATA_SCAN_PROBE
+                if (++run_ > ::strata::probe::counters().max_run.load(std::memory_order_relaxed)) {
+                    ::strata::probe::counters().max_run.store(run_, std::memory_order_relaxed);
+                }
+#endif
                 internal_->next();
                 continue;
             }
@@ -82,6 +93,9 @@ class DBIter final : public Iterator {
                 break;
             case kTypeValue:
                 saved_key_.assign(pik.user_key.data(), pik.user_key.size());
+#ifdef STRATA_SCAN_PROBE
+                run_ = 0;
+#endif
                 valid_ = true;
                 return;
             }
@@ -93,6 +107,9 @@ class DBIter final : public Iterator {
     const SequenceNumber seq_;
     std::shared_ptr<void> pin_;
     std::string saved_key_; // owned copy: block iterators mutate on next()
+#ifdef STRATA_SCAN_PROBE
+    std::uint64_t run_ = 0;
+#endif
     bool valid_ = false;
     Status status_;
 };

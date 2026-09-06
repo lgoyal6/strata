@@ -9,7 +9,7 @@ add_executable(bench
     engine_rocksdb.cc
 )
 target_link_libraries(bench PRIVATE strata strata_test_warnings)
-target_include_directories(bench PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(bench PRIVATE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
 
 if(ROCKSDB_INCLUDE_DIR AND ROCKSDB_LIBRARY)
     message(STATUS "bench: RocksDB baseline enabled (${ROCKSDB_LIBRARY})")
