@@ -23,6 +23,7 @@ add_executable(strata_unit
     unit/manifest_test.cc
     unit/db_test.cc
     unit/db_model_test.cc
+    unit/iter_skip_test.cc
 )
 target_link_libraries(strata_unit PRIVATE strata GTest::gtest_main strata_test_warnings)
 target_include_directories(strata_unit PRIVATE ${CMAKE_SOURCE_DIR}/src)

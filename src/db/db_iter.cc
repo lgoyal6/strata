@@ -7,6 +7,16 @@
 namespace strata {
 namespace {
 
+// A key that has been overwritten many times leaves a run of superseded
+// versions that the iterator must step over. Walking them one at a time
+// costs one N-way merge comparison each; past this run length a single
+// targeted seek to the next user key is cheaper. Measured sweep and the
+// workload that motivates it: docs/BENCHMARKS.md.
+#ifndef STRATA_SKIP_RUN_SEEK_THRESHOLD
+#define STRATA_SKIP_RUN_SEEK_THRESHOLD 16
+#endif
+constexpr std::uint64_t kSkipRunSeekThreshold = STRATA_SKIP_RUN_SEEK_THRESHOLD;
+
 class DBIter final : public Iterator {
   public:
     DBIter(std::unique_ptr<Iterator> internal, SequenceNumber seq, std::shared_ptr<void> pin)
@@ -58,6 +68,7 @@ class DBIter final : public Iterator {
     // `skipping`, entries with user key <= saved_key_ are shadowed (older
     // versions of a yielded key, or anything under a tombstone).
     void find_next_user_entry(bool skipping) {
+        std::uint64_t run = 0; // consecutive superseded versions of saved_key_
         while (internal_->valid()) {
             ParsedInternalKey pik;
             if (!parse_internal_key(internal_->key(), &pik)) {
@@ -81,6 +92,11 @@ class DBIter final : public Iterator {
                     ::strata::probe::counters().max_run.store(run_, std::memory_order_relaxed);
                 }
 #endif
+                if (++run >= kSkipRunSeekThreshold) {
+                    seek_past_saved_key();
+                    run = 0;
+                    continue;
+                }
                 internal_->next();
                 continue;
             }
@@ -101,6 +117,20 @@ class DBIter final : public Iterator {
             }
         }
         valid_ = false;
+    }
+
+    // Positions internal_ at the first entry whose user key is strictly
+    // greater than saved_key_. User keys compare bytewise, so appending a
+    // zero byte yields the smallest user key above saved_key_; seeking at
+    // kMaxSequenceNumber lands on that key's newest version, and the normal
+    // visibility check in the caller still applies.
+    void seek_past_saved_key() {
+        std::string next_user_key = saved_key_;
+        next_user_key.push_back('\0');
+        std::string target;
+        append_internal_key(&target, Slice(next_user_key), kMaxSequenceNumber, kValueTypeForSeek);
+        internal_->seek(Slice(target));
+        STRATA_PROBE_ADD(skip_seeks, 1);
     }
 
     std::unique_ptr<Iterator> internal_;
