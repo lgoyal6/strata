@@ -215,6 +215,11 @@ after reopen: 2050 events
 OK
 ```
 
+`scripts/test-package-upgrade.sh` installs the tagged v0.1.0 package, builds and
+runs a retained external consumer, upgrades the same prefix to v0.1.1, and runs
+the consumer again. Its negative control requires an incompatible exact 0.2
+package and must fail configuration. CI fetches release tags and runs this gate.
+
 ## Build & test
 
 Needs CMake ≥ 3.24, Ninja, and a C++20 compiler reachable as `clang++`. The
