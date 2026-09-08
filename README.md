@@ -104,9 +104,10 @@ in this engine (see `docs/DESIGN.md` §1.3, §2.2):
    │  records   │  └───┬────────────┘       bloom → index → block
    └────────────┘      │ full: rotate (with WAL)
                   ┌────▼─────────┐    ┌──────────────────┐
-                  │ flush thread │    │ compaction thread│
-                  │ imm → L0 SST │    │ L0 tiered → L1+  │
-                  └────┬─────────┘    │ leveled, cursor  │
+                  │ flush thread │    │ compaction pool  │
+                  │ imm → L0 SST │    │ bounded queue,   │
+                  └────┬─────────┘    │ L0 tiered → L1+  │
+                       │              │ leveled, cursor  │
                        │              └───────┬──────────┘
                   ┌────▼──────────────────────▼───┐
                   │ MANIFEST: full-snapshot +     │
@@ -125,7 +126,12 @@ in this engine (see `docs/DESIGN.md` §1.3, §2.2):
   L1..L6 with a round-robin cursor, boundary-key expansion (the LevelDB
   boundary bug), snapshot-aware GC, tombstones dropped only at the
   bottommost level. Writes **stall rather than OOM**: 1 ms slowdown at 8 L0
-  files, hard stop at 12 or 2 immutable memtables.
+  files, hard stop at 12 or 2 immutable memtables. Compactions run on a
+  **bounded scheduler owning a fixed worker pool** (one worker via `DB::open`;
+  tests and benchmarks construct more): a bounded trigger queue that never
+  grows unbounded, no detached threads, workers joined on shutdown, and two
+  compactions may overlap in time only when their input file sets are
+  disjoint. Lock order and ownership: `docs/DESIGN.md` §5.
 - **MVCC**: sequence-tagged internal keys; snapshots pin a sequence;
   iterators are point-in-time; compaction never GCs a version a live
   snapshot can still see.
