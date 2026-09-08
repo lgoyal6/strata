@@ -135,10 +135,21 @@ class VersionSet {
     // Union of file numbers referenced by any still-referenced Version.
     void add_live_files(std::set<std::uint64_t>* live);
 
-    // Picks the highest-score compaction; false if all scores < 1.
-    bool pick_compaction(CompactionJob* job);
-    // Forces a compaction of `level` regardless of score (compact_all).
-    bool pick_compaction_at_level(int level, CompactionJob* job);
+    // True when some level's score reaches the compaction threshold. No side
+    // effects. Caller must hold the DB mutex (same rule as the pickers).
+    bool needs_compaction() const;
+
+    // Picks the best-scoring compaction whose input files are all outside
+    // `busy_inputs` (files owned by an already-running compaction); false if
+    // no level triggers or every triggering candidate conflicts. The
+    // round-robin cursor only advances for the job actually returned.
+    // Caller must hold the DB mutex.
+    bool pick_compaction(const std::set<std::uint64_t>& busy_inputs, CompactionJob* job);
+    // Forces a compaction of `level` regardless of score (compact_all);
+    // false when the level is empty or the candidate conflicts with
+    // `busy_inputs`. Caller must hold the DB mutex.
+    bool pick_compaction_at_level(int level, const std::set<std::uint64_t>& busy_inputs,
+                                  CompactionJob* job);
 
     TableCache* table_cache() {
         return table_cache_;
@@ -154,7 +165,10 @@ class VersionSet {
     friend class Version;
 
     std::uint64_t target_bytes(int level) const;
-    void fill_inputs(CompactionJob* job, std::shared_ptr<Version> v);
+    // Builds job->inputs from v at job->level. Does NOT advance the cursor;
+    // the picker commits the cursor only for an accepted (non-conflicting)
+    // job, via *cursor_end.
+    void fill_inputs(CompactionJob* job, std::shared_ptr<Version> v, std::string* cursor_end);
     Status write_manifest(const Version& v);
     void install(std::shared_ptr<Version> v);
 

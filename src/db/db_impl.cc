@@ -28,8 +28,8 @@ Status DB::open(const Options& options, const std::string& dbname, DB** dbptr) {
     return Status::okay();
 }
 
-DBImpl::DBImpl(const Options& options, std::string dbname)
-    : options_(options), dbname_(std::move(dbname)) {
+DBImpl::DBImpl(const Options& options, std::string dbname, BackgroundConfig bg)
+    : options_(options), dbname_(std::move(dbname)), bg_config_(bg) {
     env_ = options_.env != nullptr ? options_.env : Env::default_env();
     options_.env = env_;
     // Sanitize: a write buffer at or below one arena block (4 KiB) would
@@ -55,11 +55,15 @@ DBImpl::~DBImpl() {
         stall_cv_.notify_all();
         manual_cv_.notify_all();
     }
+    // Stop the compaction pool first: queued triggers are cancelled, active
+    // compactions see shutting_down_ at their next poll and abort, and every
+    // worker is joined before any state it touches is torn down. mutex_ must
+    // NOT be held here (workers need it to finish).
+    if (compaction_pool_ != nullptr) {
+        compaction_pool_->shutdown();
+    }
     if (flush_thread_.joinable()) {
         flush_thread_.join();
-    }
-    if (compaction_thread_.joinable()) {
-        compaction_thread_.join();
     }
     if (wal_sync_thread_.joinable()) {
         wal_sync_thread_.join();
@@ -96,9 +100,15 @@ Status DBImpl::init() {
     }
 
     flush_thread_ = std::thread(&DBImpl::flush_thread_main, this);
-    compaction_thread_ = std::thread(&DBImpl::compaction_thread_main, this);
+    compaction_pool_ = std::make_unique<CompactionScheduler>(bg_config_.compaction_workers,
+                                                             bg_config_.compaction_queue_capacity);
     if (options_.fsync_policy == FsyncPolicy::kInterval) {
         wal_sync_thread_ = std::thread(&DBImpl::wal_sync_thread_main, this);
+    }
+    {
+        // Recovery may have left a compaction-worthy shape (L0 backlog).
+        std::unique_lock<std::mutex> lock(mutex_);
+        maybe_schedule_compaction();
     }
     return Status::okay();
 }
@@ -531,8 +541,8 @@ void DBImpl::flush_thread_main() {
         if (!s.ok() && !shutting_down_) {
             record_background_error(s);
         }
-        stall_cv_.notify_all();   // stalled writers + flush() waiters
-        bg_work_cv_.notify_all(); // L0 grew: compaction thread re-scores
+        stall_cv_.notify_all();       // stalled writers + flush() waiters
+        maybe_schedule_compaction(); // L0 grew: it may now score a compaction
         remove_obsolete_files(lock);
     }
 }
@@ -647,7 +657,7 @@ Status DBImpl::compact_all() {
                 break;
             }
             manual_compact_level_ = level;
-            bg_work_cv_.notify_all();
+            maybe_schedule_compaction();
             manual_cv_.wait(lock, [this] {
                 return manual_compact_level_ == -1 || !bg_error_.ok() || shutting_down_;
             });
@@ -662,46 +672,112 @@ Status DBImpl::compact_level_for_test(int level) {
         return bg_error_;
     }
     manual_compact_level_ = level;
-    bg_work_cv_.notify_all();
+    maybe_schedule_compaction();
     manual_cv_.wait(
         lock, [this] { return manual_compact_level_ == -1 || !bg_error_.ok() || shutting_down_; });
     return bg_error_;
 }
 
-void DBImpl::compaction_thread_main() {
+void DBImpl::maybe_schedule_compaction() {
+    if (shutting_down_ || !bg_error_.ok() || compaction_pool_ == nullptr) {
+        return;
+    }
+    if (compaction_triggers_scheduled_ >= compaction_pool_->workers()) {
+        return; // every worker is already awake or has a wakeup pending
+    }
+    if (manual_compact_level_ < 0 && !versions_->needs_compaction()) {
+        return;
+    }
+    if (compaction_pool_->try_submit([this] { background_compaction_entry(); })) {
+        ++compaction_triggers_scheduled_;
+    }
+}
+
+Status DBImpl::register_compaction_inputs(const CompactionJob& job) {
+    std::vector<std::uint64_t> inserted;
+    for (const auto& side : job.inputs) {
+        for (const auto& f : side) {
+            if (!compaction_busy_files_.insert(f->number).second) {
+                for (const std::uint64_t n : inserted) {
+                    compaction_busy_files_.erase(n);
+                }
+                // The pickers exclude busy inputs, so getting here means the
+                // exclusion is broken; running the job anyway could rewrite
+                // the same files twice.
+                return Status::corruption("internal: overlapping compaction input files");
+            }
+            inserted.push_back(f->number);
+        }
+    }
+    return Status::okay();
+}
+
+void DBImpl::unregister_compaction_inputs(const CompactionJob& job) {
+    for (const auto& side : job.inputs) {
+        for (const auto& f : side) {
+            compaction_busy_files_.erase(f->number);
+        }
+    }
+}
+
+void DBImpl::background_compaction_entry() {
     std::unique_lock<std::mutex> lock(mutex_);
-    while (!shutting_down_) {
+    while (!shutting_down_ && bg_error_.ok()) {
         CompactionJob job;
         bool has_work = false;
-        if (bg_error_.ok()) {
-            if (manual_compact_level_ >= 0) {
-                has_work = versions_->pick_compaction_at_level(manual_compact_level_, &job);
-                if (!has_work) {
-                    manual_compact_level_ = -1;
-                    manual_cv_.notify_all();
-                }
+        bool is_manual = false;
+        if (manual_compact_level_ >= 0 && !manual_in_progress_) {
+            const int level = manual_compact_level_;
+            has_work = versions_->pick_compaction_at_level(level, compaction_busy_files_, &job);
+            if (has_work) {
+                // Claim the round; cleared (with a wakeup) when it finishes,
+                // preserving the serial semantics of compact_level_for_test:
+                // one round per request.
+                manual_in_progress_ = true;
+                is_manual = true;
+            } else if (versions_->current()->files[level].empty()) {
+                manual_compact_level_ = -1;
+                manual_cv_.notify_all();
             }
-            if (!has_work) {
-                has_work = versions_->pick_compaction(&job);
-            }
+            // Otherwise the candidate conflicts with a running compaction;
+            // that compaction's worker re-evaluates the manual request when
+            // its own job finishes, so the request cannot be lost.
         }
         if (!has_work) {
-            bg_work_cv_.wait(lock);
-            continue;
+            has_work = versions_->pick_compaction(compaction_busy_files_, &job);
         }
-        compaction_in_progress_ = true;
-        const Status s = do_compaction(&job, lock);
-        compaction_in_progress_ = false;
+        if (!has_work) {
+            break;
+        }
+        Status s = register_compaction_inputs(job);
+        if (s.ok()) {
+            ++compactions_running_;
+            s = do_compaction(&job, lock);
+            --compactions_running_;
+            unregister_compaction_inputs(job);
+        }
         if (!s.ok() && !shutting_down_) {
             record_background_error(s);
         }
-        if (manual_compact_level_ >= 0) {
+        if (is_manual) {
+            manual_in_progress_ = false;
             manual_compact_level_ = -1;
         }
         manual_cv_.notify_all();
         stall_cv_.notify_all();
         remove_obsolete_files(lock);
+        // A finished compaction may leave enough disjoint work for another
+        // worker (it may also have pushed level+1 over its target).
+        maybe_schedule_compaction();
     }
+    // Decrement under the same lock hold as the final failed pick: a state
+    // change made after the pick but before this line sees the old count,
+    // concludes "a trigger is pending", and is right, because this loop
+    // would have observed that change; one made after this line sees the
+    // decremented count and schedules a fresh trigger.
+    --compaction_triggers_scheduled_;
+    manual_cv_.notify_all();
+    stall_cv_.notify_all();
 }
 
 bool DBImpl::is_base_level_for_key(const Version& v, int first_level, const Slice& ukey,

@@ -541,16 +541,59 @@ std::uint64_t VersionSet::target_bytes(int level) const {
     return static_cast<std::uint64_t>(target);
 }
 
-bool VersionSet::pick_compaction(CompactionJob* job) {
-    const auto v = current();
-    int best_level = -1;
-    double best_score = 1.0; // strictly above 1.0 triggers
+namespace {
 
+// True when any input file of `job` is already owned by a running
+// compaction. Disjoint input file sets are what make concurrent compactions
+// safe: each job deletes exactly its own inputs and its outputs land in key
+// ranges no other in-flight job can touch (every level+1 file overlapping a
+// job's range is one of its inputs, by construction in fill_inputs).
+bool inputs_conflict(const CompactionJob& job, const std::set<std::uint64_t>& busy_inputs) {
+    for (const auto& side : job.inputs) {
+        for (const auto& f : side) {
+            if (busy_inputs.count(f->number) > 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+// Score model shared by needs_compaction and pick_compaction: L0 triggers at
+// file_count / l0_compaction_trigger >= 1.0, deeper levels at
+// level_bytes / target_bytes strictly above 1.0.
+bool VersionSet::needs_compaction() const {
+    const auto v = current();
+    if (static_cast<double>(v->files[0].size()) /
+            static_cast<double>(options_->l0_compaction_trigger) >=
+        1.0) {
+        return true;
+    }
+    for (int level = 1; level < kNumLevels - 1; ++level) {
+        if (v->files[level].empty()) {
+            continue;
+        }
+        if (static_cast<double>(v->level_bytes(level)) / static_cast<double>(target_bytes(level)) >
+            1.0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool VersionSet::pick_compaction(const std::set<std::uint64_t>& busy_inputs, CompactionJob* job) {
+    const auto v = current();
+
+    // Every level whose score reaches the trigger, best first, so a busy
+    // top choice falls through to the next-most-urgent level instead of
+    // stalling background work.
+    std::vector<std::pair<double, int>> candidates;
     const double l0_score = static_cast<double>(v->files[0].size()) /
                             static_cast<double>(options_->l0_compaction_trigger);
-    if (l0_score >= best_score) {
-        best_score = l0_score;
-        best_level = 0;
+    if (l0_score >= 1.0) {
+        candidates.emplace_back(l0_score, 0);
     }
     for (int level = 1; level < kNumLevels - 1; ++level) {
         if (v->files[level].empty()) {
@@ -558,26 +601,39 @@ bool VersionSet::pick_compaction(CompactionJob* job) {
         }
         const double score =
             static_cast<double>(v->level_bytes(level)) / static_cast<double>(target_bytes(level));
-        if (score > best_score) {
-            best_score = score;
-            best_level = level;
+        if (score > 1.0) {
+            candidates.emplace_back(score, level);
         }
     }
-    if (best_level < 0) {
-        return false;
+    std::sort(candidates.begin(), candidates.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    for (const auto& [score, level] : candidates) {
+        job->level = level;
+        std::string cursor_end;
+        fill_inputs(job, v, &cursor_end);
+        if (inputs_conflict(*job, busy_inputs)) {
+            continue; // this level's turn comes again once the owner finishes
+        }
+        compact_cursor_[level] = std::move(cursor_end);
+        return true;
     }
-    job->level = best_level;
-    fill_inputs(job, v);
-    return true;
+    return false;
 }
 
-bool VersionSet::pick_compaction_at_level(int level, CompactionJob* job) {
+bool VersionSet::pick_compaction_at_level(int level, const std::set<std::uint64_t>& busy_inputs,
+                                          CompactionJob* job) {
     const auto v = current();
     if (level < 0 || level >= kNumLevels - 1 || v->files[level].empty()) {
         return false;
     }
     job->level = level;
-    fill_inputs(job, v);
+    std::string cursor_end;
+    fill_inputs(job, v, &cursor_end);
+    if (inputs_conflict(*job, busy_inputs)) {
+        return false;
+    }
+    compact_cursor_[level] = std::move(cursor_end);
     return true;
 }
 
@@ -639,7 +695,8 @@ void user_key_range(const std::vector<std::shared_ptr<FileMeta>>& files, std::st
 
 } // namespace
 
-void VersionSet::fill_inputs(CompactionJob* job, std::shared_ptr<Version> v) {
+void VersionSet::fill_inputs(CompactionJob* job, std::shared_ptr<Version> v,
+                             std::string* cursor_end) {
     const int level = job->level;
     job->inputs[0].clear();
     job->inputs[1].clear();
@@ -677,8 +734,9 @@ void VersionSet::fill_inputs(CompactionJob* job, std::shared_ptr<Version> v) {
     }
     job->base = std::move(v);
 
-    // Advance the cursor past this compaction's range.
-    compact_cursor_[level] = end;
+    // The cursor should advance past this compaction's range, but only if
+    // the job is accepted; the picker commits it.
+    *cursor_end = std::move(end);
 }
 
 } // namespace strata
