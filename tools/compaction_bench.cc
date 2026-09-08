@@ -98,9 +98,7 @@ int main(int argc, char** argv) {
     Config cfg;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-        const auto next = [&]() -> const char* {
-            return i + 1 < argc ? argv[++i] : nullptr;
-        };
+        const auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : nullptr; };
         if (arg == "--db") {
             const char* v = next();
             if (v == nullptr) {
@@ -259,9 +257,8 @@ int main(int argc, char** argv) {
                 compact_wall, st.compaction_count, st.flush_count);
     std::printf("  write-amp:  %.2f (wal=%" PRIu64 "MB flush=%" PRIu64 "MB compact=%" PRIu64
                 "MB / user=%" PRIu64 "MB)\n",
-                st.write_amplification(), st.wal_bytes_written >> 20,
-                st.flush_bytes_written >> 20, st.compaction_bytes_written >> 20,
-                st.user_bytes_written >> 20);
+                st.write_amplification(), st.wal_bytes_written >> 20, st.flush_bytes_written >> 20,
+                st.compaction_bytes_written >> 20, st.user_bytes_written >> 20);
     std::printf("  reads:      %" PRIu64 " gets in %.2f s (%.0f ops/s), %" PRIu64
                 " found, p50=%.1f us p99=%.1f us\n",
                 cfg.reads, read_secs, static_cast<double>(cfg.reads) / read_secs, found, pct(0.50),
@@ -269,15 +266,14 @@ int main(int argc, char** argv) {
     std::printf("  resources:  peak_rss=%.1f MB, cpu_avg=%.2f cores over ingest+compaction\n",
                 static_cast<double>(peak_rss_bytes()) / (1024.0 * 1024.0),
                 cpu_active / (t_quiesce - t0));
-    std::printf("  final size: %.1f MB on disk\n", static_cast<double>(db_size) / (1024.0 * 1024.0));
-    std::printf("CSV %s,%d,%.2f,%.0f,%.1f,%.2f,%.2f,%.1f,%.1f,%.1f,%.2f,%.1f,%" PRIu64 ",%" PRIu64
-                "\n",
-                cfg.label.c_str(), cfg.workers, ingest_secs,
-                static_cast<double>(cfg.ops) / ingest_secs,
-                static_cast<double>(st.write_stall_micros) / 1000.0, compact_wall,
-                st.write_amplification(), pct(0.50), pct(0.99),
-                static_cast<double>(peak_rss_bytes()) / (1024.0 * 1024.0),
-                cpu_active / (t_quiesce - t0), static_cast<double>(db_size) / (1024.0 * 1024.0),
-                st.compaction_count, st.flush_count);
+    std::printf("  final size: %.1f MB on disk\n",
+                static_cast<double>(db_size) / (1024.0 * 1024.0));
+    std::printf(
+        "CSV %s,%d,%.2f,%.0f,%.1f,%.2f,%.2f,%.1f,%.1f,%.1f,%.2f,%.1f,%" PRIu64 ",%" PRIu64 "\n",
+        cfg.label.c_str(), cfg.workers, ingest_secs, static_cast<double>(cfg.ops) / ingest_secs,
+        static_cast<double>(st.write_stall_micros) / 1000.0, compact_wall, st.write_amplification(),
+        pct(0.50), pct(0.99), static_cast<double>(peak_rss_bytes()) / (1024.0 * 1024.0),
+        cpu_active / (t_quiesce - t0), static_cast<double>(db_size) / (1024.0 * 1024.0),
+        st.compaction_count, st.flush_count);
     return 0;
 }

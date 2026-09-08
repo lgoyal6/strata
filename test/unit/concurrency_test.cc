@@ -470,14 +470,12 @@ TEST(ConcurrencyTest, CompactionErrorPropagatesToOwner) {
     fault_env.fail_sst.store(true);
     const Status s = db->compact_level_for_test(0);
     ASSERT_FALSE(s.ok());
-    EXPECT_NE(s.to_string().find("injected sst write failure"), std::string::npos)
-        << s.to_string();
+    EXPECT_NE(s.to_string().find("injected sst write failure"), std::string::npos) << s.to_string();
 
     // The database owner sees the background error on the write path too.
     const Status w = db->put(WriteOptions(), "after", "x");
     ASSERT_FALSE(w.ok());
-    EXPECT_NE(w.to_string().find("injected sst write failure"), std::string::npos)
-        << w.to_string();
+    EXPECT_NE(w.to_string().find("injected sst write failure"), std::string::npos) << w.to_string();
 
     fault_env.fail_sst.store(false);
     db.reset();
