@@ -541,7 +541,7 @@ void DBImpl::flush_thread_main() {
         if (!s.ok() && !shutting_down_) {
             record_background_error(s);
         }
-        stall_cv_.notify_all();       // stalled writers + flush() waiters
+        stall_cv_.notify_all();      // stalled writers + flush() waiters
         maybe_schedule_compaction(); // L0 grew: it may now score a compaction
         remove_obsolete_files(lock);
     }
