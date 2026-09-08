@@ -312,8 +312,9 @@ for a fresh one (together with a new WAL segment - WAL rotation is
 coupled to memtable rotation, which is what makes replay-all-WALs
 correct) and pushed onto the immutable queue. A dedicated **flush
 thread** drains immutables to L0 oldest-first; a separate **compaction
-thread** runs level compactions - so a long L1→L2 compaction can never
-block flushes into stalling writers that L0 could still absorb.
+worker pool** (bounded scheduler, one worker by default) runs level
+compactions - so a long L1→L2 compaction can never block flushes into
+stalling writers that L0 could still absorb.
 
 ### 2.2 Write path (group commit)
 
@@ -408,12 +409,25 @@ limitation; YCSB A/B/C does not scan).
 leveled L1..L6 (non-overlapping files, ~8 MiB each), target sizes
 `target(L1) = 64 MiB`, `target(Ln) = 10 × target(Ln-1)`.
 
-**Picking** (one background thread; highest score ≥ 1.0 wins):
+**Picking** (compaction worker pool; highest score ≥ 1.0 wins):
 
 ```
 score(L0) = file_count / 4
 score(Ln) = level_bytes / target(Ln)
 ```
+
+Compactions run on a bounded scheduler owning a small pool of worker
+threads (one by default; tests and benchmarks construct more). Two
+compactions may run concurrently only when their **input file sets are
+disjoint**: the picker skips any candidate whose input file is owned by
+a running compaction, falling through to the next-most-urgent level.
+Disjoint inputs are sufficient because every level+1 file overlapping a
+job's key range is one of its inputs by construction, so each job
+deletes exactly its own inputs and publishes outputs into key ranges no
+other in-flight job can touch; version publication itself stays
+serialized under the DB mutex. The lock order and the state each mutex
+protects are documented at the synchronization map in `src/db/db_impl.h`
+and in `src/db/compaction_scheduler.h`.
 
 - L0→L1: inputs = **all** L0 files (they overlap) + all overlapping L1
   files. This is the size-tiered step: L0 absorbs bursts, and merging
