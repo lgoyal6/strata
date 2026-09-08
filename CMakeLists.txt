@@ -49,6 +49,7 @@ add_library(strata STATIC
     src/db/memtable.cc
     src/db/write_batch.cc
     src/db/table_cache.cc
+    src/db/compaction_scheduler.cc
     src/db/version.cc
     src/db/db_iter.cc
     src/db/db_impl.cc
