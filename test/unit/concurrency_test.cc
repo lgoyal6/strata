@@ -157,11 +157,15 @@ TEST(CompactionSchedulerTest, ShutdownCancelsQueuedAndJoinsActive) {
         release.set_value();
     });
     pool->shutdown();
+    // Sampled at the instant shutdown() returns: a shutdown that joins its
+    // workers cannot return before the active task completed, while one
+    // that leaks them returns immediately (the release fires ~50 ms later).
+    const bool finished_when_shutdown_returned = active_finished.load();
     releaser.join();
 
     // The active task ran to completion and was joined; queued tasks were
     // cancelled without running; post-shutdown submission is refused.
-    EXPECT_TRUE(active_finished.load());
+    EXPECT_TRUE(finished_when_shutdown_returned);
     EXPECT_EQ(queued_ran.load(), 0);
     EXPECT_EQ(pool->dropped_count(), 3u);
     EXPECT_FALSE(pool->submit([] {}));
