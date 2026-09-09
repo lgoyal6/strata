@@ -56,7 +56,7 @@ double now_secs() {
 }
 
 double cpu_secs() {
-    struct rusage ru {};
+    struct rusage ru{};
     getrusage(RUSAGE_SELF, &ru);
     const auto tv = [](const timeval& t) {
         return static_cast<double>(t.tv_sec) + static_cast<double>(t.tv_usec) / 1e6;
@@ -65,7 +65,7 @@ double cpu_secs() {
 }
 
 std::uint64_t peak_rss_bytes() {
-    struct rusage ru {};
+    struct rusage ru{};
     getrusage(RUSAGE_SELF, &ru);
     return static_cast<std::uint64_t>(ru.ru_maxrss); // bytes on macOS
 }
