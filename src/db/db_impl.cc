@@ -436,6 +436,7 @@ Status DBImpl::rotate_memtable_and_wal() {
 // ===========================================================================
 
 Status DBImpl::get(const ReadOptions& opt, const Slice& key, std::string* value) {
+    stats_.point_reads.fetch_add(1, std::memory_order_relaxed);
     SequenceNumber seq;
     std::shared_ptr<MemTable> mem;
     std::vector<std::shared_ptr<MemTable>> imms;
@@ -499,12 +500,15 @@ Iterator* DBImpl::new_iterator(const ReadOptions& opt) {
 
 const Snapshot* DBImpl::get_snapshot() {
     std::lock_guard<std::mutex> lock(mutex_);
-    return snapshots_.new_snapshot(versions_->last_sequence());
+    const Snapshot* snapshot = snapshots_.new_snapshot(versions_->last_sequence());
+    stats_.snapshot_count.fetch_add(1, std::memory_order_relaxed);
+    return snapshot;
 }
 
 void DBImpl::release_snapshot(const Snapshot* snapshot) {
     std::lock_guard<std::mutex> lock(mutex_);
     snapshots_.release(static_cast<const SnapshotImpl*>(snapshot));
+    stats_.snapshot_count.fetch_sub(1, std::memory_order_relaxed);
 }
 
 // ===========================================================================
@@ -1086,6 +1090,14 @@ DbStats DBImpl::stats() const {
     if (block_cache_ != nullptr) {
         out.block_cache_hits = block_cache_->hits();
         out.block_cache_misses = block_cache_->misses();
+    }
+    out.point_reads = stats_.point_reads.load(std::memory_order_relaxed);
+    out.sst_file_probes = table_stats_.sst_file_probes.load(std::memory_order_relaxed);
+    out.compaction_debt_bytes = versions_->compaction_debt_bytes();
+    out.snapshot_count = stats_.snapshot_count.load(std::memory_order_relaxed);
+    const auto current = versions_->current();
+    for (int level = 0; level < kNumLevels; ++level) {
+        out.current_sst_bytes += current->level_bytes(level);
     }
     return out;
 }

@@ -4,7 +4,7 @@
 //
 //   bench --engine strata|rocksdb --workload load|a|b|c|e
 //         --dir D --records N --ops M --threads T --value-size B --sync 0|1
-//         [--seed S]
+//         [--seed S] [--pin-snapshot 0|1]
 //
 // load: insert all N records (hashed key order).
 // a: 50% read / 50% update       b: 95% read / 5% update
@@ -18,6 +18,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -47,7 +48,7 @@ const char* arg_value(int argc, char** argv, const char* name, const char* fallb
 // Peak resident set of this process. ru_maxrss is bytes on Darwin and kilobytes on
 // Linux, which is a portability trap worth naming rather than a number worth guessing.
 std::uint64_t peak_rss_bytes() {
-    struct rusage ru {};
+    struct rusage ru{};
     getrusage(RUSAGE_SELF, &ru);
 #if defined(__APPLE__)
     return static_cast<std::uint64_t>(ru.ru_maxrss);
@@ -83,7 +84,7 @@ std::uint64_t current_rss_bytes() {
 // says how long you waited, CPU time says what you paid for, and on a machine shared
 // with other work the two are not the same number.
 double cpu_seconds() {
-    struct rusage ru {};
+    struct rusage ru{};
     getrusage(RUSAGE_SELF, &ru);
     return static_cast<double>(ru.ru_utime.tv_sec) +
            static_cast<double>(ru.ru_utime.tv_usec) / 1e6 +
@@ -136,6 +137,8 @@ int main(int argc, char** argv) {
     const bool sync_writes = std::strtol(arg_value(argc, argv, "--sync", "0"), nullptr, 10) != 0;
     const bool full_fsync =
         std::strtol(arg_value(argc, argv, "--fullfsync", "0"), nullptr, 10) != 0;
+    const bool pin_snapshot =
+        std::strtol(arg_value(argc, argv, "--pin-snapshot", "0"), nullptr, 10) != 0;
     const std::uint64_t seed = std::strtoull(arg_value(argc, argv, "--seed", "42"), nullptr, 10);
     if (threads == 0 || records == 0 || (engine_name != "strata" && engine_name != "rocksdb") ||
         (workload != "load" && workload != "a" && workload != "b" && workload != "c" &&
@@ -164,7 +167,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     std::string err;
-    if (!engine->open(dir, sync_writes, full_fsync, &err)) {
+    if (!engine->open(dir, sync_writes, full_fsync, pin_snapshot, &err)) {
         if (timeseries != nullptr)
             std::fclose(timeseries);
         std::fprintf(stderr, "open failed: %s\n", err.c_str());
@@ -193,6 +196,9 @@ int main(int argc, char** argv) {
     static const char* const kOpNames[kOpKinds] = {"read", "update", "scan", "insert"};
     std::vector<std::vector<std::uint64_t>> latencies(threads);
     std::vector<std::array<std::vector<std::uint64_t>, kOpKinds>> by_kind(threads);
+    std::vector<std::array<std::vector<std::uint64_t>, kOpKinds>> postwarmup_by_kind(threads);
+    std::atomic<std::uint64_t> completion_order{0};
+    const std::uint64_t warmup_ops = total_ops / 5;
     const std::uint64_t wall_start = now_ns();
     std::atomic<std::uint64_t> observed_ops{0};
     std::mutex sample_mutex;
@@ -284,6 +290,11 @@ int main(int argc, char** argv) {
                 const std::uint64_t elapsed = now_ns() - op_start;
                 lat.push_back(elapsed);
                 kinds[kind].push_back(elapsed);
+                const std::uint64_t ordinal =
+                    completion_order.fetch_add(1, std::memory_order_relaxed);
+                if (ordinal >= warmup_ops) {
+                    postwarmup_by_kind[t][kind].push_back(elapsed);
+                }
                 if (timeseries != nullptr)
                     observed_ops.fetch_add(1, std::memory_order_relaxed);
             }
@@ -321,10 +332,11 @@ int main(int argc, char** argv) {
         return static_cast<double>(all[idx]) / 1000.0; // us
     };
 
-    std::printf("engine=%s workload=%s records=%llu ops=%llu threads=%u value=%zu sync=%d\n",
+    std::printf("engine=%s workload=%s records=%llu ops=%llu threads=%u value=%zu sync=%d "
+                "pin_snapshot=%d warmup_completion_fraction=0.20\n",
                 engine_name.c_str(), workload.c_str(), static_cast<unsigned long long>(records),
                 static_cast<unsigned long long>(all.size()), threads, value_size,
-                sync_writes ? 1 : 0);
+                sync_writes ? 1 : 0, pin_snapshot ? 1 : 0);
     std::printf("  wall=%.2fs throughput=%.0f ops/s p50=%.1fus p95=%.1fus p99=%.1fus "
                 "p999=%.1fus\n",
                 secs, static_cast<double>(all.size()) / secs, pct(0.50), pct(0.95), pct(0.99),
@@ -346,8 +358,49 @@ int main(int argc, char** argv) {
         std::printf("  %-6s n=%-8zu p50=%.1fus p95=%.1fus p99=%.1fus p999=%.1fus max=%.1fus\n",
                     kOpNames[k], v.size(), kp(0.50), kp(0.95), kp(0.99), kp(0.999),
                     static_cast<double>(v.back()) / 1000.0);
+
+        std::vector<std::uint64_t> postwarm;
+        for (auto& per_thread : postwarmup_by_kind) {
+            postwarm.insert(postwarm.end(), per_thread[k].begin(), per_thread[k].end());
+        }
+        if (!postwarm.empty()) {
+            std::sort(postwarm.begin(), postwarm.end());
+            const auto pp = [&](double p) {
+                const std::size_t i =
+                    std::min(postwarm.size() - 1,
+                             static_cast<std::size_t>(p * static_cast<double>(postwarm.size())));
+                return static_cast<double>(postwarm[i]) / 1000.0;
+            };
+            std::printf("  postwarmup_%s n=%-8zu p50=%.1fus p95=%.1fus p99=%.1fus "
+                        "p999=%.1fus max=%.1fus\n",
+                        kOpNames[k], postwarm.size(), pp(0.50), pp(0.95), pp(0.99), pp(0.999),
+                        static_cast<double>(postwarm.back()) / 1000.0);
+        }
     }
     std::printf("  %s\n", engine->stats_summary().c_str());
+    std::uint64_t on_disk_sst_bytes = 0;
+    std::uint64_t on_disk_sst_files = 0;
+    bool storage_measurement_failed = false;
+    std::error_code fs_error;
+    for (std::filesystem::directory_iterator it(dir, fs_error), end; !fs_error && it != end;
+         it.increment(fs_error)) {
+        if (it->is_regular_file(fs_error) && it->path().extension() == ".sst") {
+            on_disk_sst_bytes += it->file_size(fs_error);
+            ++on_disk_sst_files;
+        }
+    }
+    if (!fs_error) {
+        const std::uint64_t live_sst_bytes = engine->live_sst_bytes();
+        std::printf("  disk_sst_bytes=%llu disk_sst_files=%llu live_sst_bytes=%llu "
+                    "space_amplification=%.4f\n",
+                    static_cast<unsigned long long>(on_disk_sst_bytes),
+                    static_cast<unsigned long long>(on_disk_sst_files),
+                    static_cast<unsigned long long>(live_sst_bytes),
+                    live_sst_bytes ? static_cast<double>(on_disk_sst_bytes) / live_sst_bytes : 0.0);
+    } else {
+        std::fprintf(stderr, "cannot measure on-disk SST bytes: %s\n", fs_error.message().c_str());
+        storage_measurement_failed = true;
+    }
 
     // The three things a throughput line alone never says: what failed, what it held in
     // memory, and what it cost. USD is a derived figure, not a measurement: the measured
@@ -373,6 +426,10 @@ int main(int argc, char** argv) {
                 all.empty() ? 0.0 : cpu * usd_per_cpu_s * 1e6 / static_cast<double>(all.size()));
 
     engine->close();
+    if (storage_measurement_failed) {
+        std::fprintf(stderr, "storage metrics are incomplete\n");
+        return 4;
+    }
     if (sample_output_failed) {
         std::fprintf(stderr, "timeseries output failed; measurement evidence is incomplete\n");
         return 4;

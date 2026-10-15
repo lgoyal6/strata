@@ -583,6 +583,23 @@ bool VersionSet::needs_compaction() const {
     return false;
 }
 
+std::uint64_t VersionSet::compaction_debt_bytes() const {
+    const auto v = current();
+    std::uint64_t bytes = 0;
+    if (static_cast<double>(v->files[0].size()) /
+            static_cast<double>(options_->l0_compaction_trigger) >=
+        1.0) {
+        bytes += v->level_bytes(0);
+    }
+    for (int level = 1; level < kNumLevels - 1; ++level) {
+        const std::uint64_t level_size = v->level_bytes(level);
+        if (level_size > target_bytes(level)) {
+            bytes += level_size;
+        }
+    }
+    return bytes;
+}
+
 bool VersionSet::pick_compaction(const std::set<std::uint64_t>& busy_inputs, CompactionJob* job) {
     const auto v = current();
 

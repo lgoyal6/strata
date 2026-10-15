@@ -33,6 +33,11 @@ struct DbStats {
     std::uint64_t bloom_skips = 0; // file probes avoided by the filter
     std::uint64_t block_cache_hits = 0;
     std::uint64_t block_cache_misses = 0;
+    std::uint64_t point_reads = 0;
+    std::uint64_t sst_file_probes = 0;
+    std::uint64_t compaction_debt_bytes = 0; // SST bytes in score-triggered source levels
+    std::uint64_t current_sst_bytes = 0;
+    std::uint64_t snapshot_count = 0;
 
     // (wal + flush + compaction writes) / user bytes
     double write_amplification() const {

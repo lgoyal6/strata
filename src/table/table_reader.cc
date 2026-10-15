@@ -107,6 +107,9 @@ Status TableReader::read_block(const BlockHandle& handle, std::shared_ptr<const 
 
 Status TableReader::get(const Slice& internal_key, std::string* found_ikey,
                         std::string* found_value, bool* found) {
+    if (stats_ != nullptr) {
+        stats_->sst_file_probes.fetch_add(1, std::memory_order_relaxed);
+    }
     *found = false;
     if (!filter_.empty()) {
         if (stats_ != nullptr) {
