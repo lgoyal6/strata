@@ -1,4 +1,6 @@
 // YCSB-style benchmark driver (docs/BENCHMARKS.md).
+// Uses engine.h and ycsb.h to give both engines the same offered work.
+// Every offered operation is assigned once, including uneven thread partitions.
 //
 //   bench --engine strata|rocksdb --workload load|a|b|c|e
 //         --dir D --records N --ops M --threads T --value-size B --sync 0|1
@@ -13,8 +15,10 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -43,7 +47,7 @@ const char* arg_value(int argc, char** argv, const char* name, const char* fallb
 // Peak resident set of this process. ru_maxrss is bytes on Darwin and kilobytes on
 // Linux, which is a portability trap worth naming rather than a number worth guessing.
 std::uint64_t peak_rss_bytes() {
-    struct rusage ru {};
+    struct rusage ru{};
     getrusage(RUSAGE_SELF, &ru);
 #if defined(__APPLE__)
     return static_cast<std::uint64_t>(ru.ru_maxrss);
@@ -79,7 +83,7 @@ std::uint64_t current_rss_bytes() {
 // says how long you waited, CPU time says what you paid for, and on a machine shared
 // with other work the two are not the same number.
 double cpu_seconds() {
-    struct rusage ru {};
+    struct rusage ru{};
     getrusage(RUSAGE_SELF, &ru);
     return static_cast<double>(ru.ru_utime.tv_sec) +
            static_cast<double>(ru.ru_utime.tv_usec) / 1e6 +
@@ -133,15 +137,36 @@ int main(int argc, char** argv) {
     const bool full_fsync =
         std::strtol(arg_value(argc, argv, "--fullfsync", "0"), nullptr, 10) != 0;
     const std::uint64_t seed = std::strtoull(arg_value(argc, argv, "--seed", "42"), nullptr, 10);
+    if (threads == 0 || records == 0 || (engine_name != "strata" && engine_name != "rocksdb") ||
+        (workload != "load" && workload != "a" && workload != "b" && workload != "c" &&
+         workload != "e")) {
+        std::fprintf(stderr, "invalid engine, workload, record count or thread count\n");
+        return 2;
+    }
+    // Optional private evidence output. Sampling observes cumulative counters;
+    // the existing per-operation latency distributions remain authoritative.
+    const std::string timeseries_path = arg_value(argc, argv, "--timeseries", "");
+    std::FILE* timeseries = nullptr;
+    if (!timeseries_path.empty()) {
+        timeseries = std::fopen(timeseries_path.c_str(), "wx");
+        if (timeseries == nullptr) {
+            std::fprintf(stderr, "cannot create fresh timeseries output\n");
+            return 2;
+        }
+    }
 
     std::unique_ptr<BenchEngine> engine =
         engine_name == "rocksdb" ? make_rocksdb_engine() : make_strata_engine();
     if (engine == nullptr) {
+        if (timeseries != nullptr)
+            std::fclose(timeseries);
         std::fprintf(stderr, "engine %s not available in this build\n", engine_name.c_str());
         return 2;
     }
     std::string err;
     if (!engine->open(dir, sync_writes, full_fsync, &err)) {
+        if (timeseries != nullptr)
+            std::fclose(timeseries);
         std::fprintf(stderr, "open failed: %s\n", err.c_str());
         return 1;
     }
@@ -169,12 +194,45 @@ int main(int argc, char** argv) {
     std::vector<std::vector<std::uint64_t>> latencies(threads);
     std::vector<std::array<std::vector<std::uint64_t>, kOpKinds>> by_kind(threads);
     const std::uint64_t wall_start = now_ns();
+    std::atomic<std::uint64_t> observed_ops{0};
+    std::mutex sample_mutex;
+    std::condition_variable sample_cv;
+    bool sample_done = false;
+    bool sample_output_failed = false; // sampler owns until it is joined
+    std::thread sampler;
+    if (timeseries != nullptr) {
+        sampler = std::thread([&] {
+            auto sample = [&] {
+                std::string stats = engine->stats_summary();
+                std::replace(stats.begin(), stats.end(), '\n', ' ');
+                std::replace(stats.begin(), stats.end(), '\t', ' ');
+                const int written = std::fprintf(
+                    timeseries, "%.6f\t%llu\t%llu\t%s\n",
+                    static_cast<double>(now_ns() - wall_start) / 1e9,
+                    static_cast<unsigned long long>(observed_ops.load()),
+                    static_cast<unsigned long long>(current_rss_bytes()), stats.c_str());
+                if (written < 0 || std::fflush(timeseries) != 0) {
+                    sample_output_failed = true;
+                }
+            };
+            std::unique_lock lock(sample_mutex);
+            sample();
+            while (!sample_cv.wait_for(lock, std::chrono::milliseconds(200),
+                                       [&] { return sample_done; })) {
+                sample();
+            }
+            sample();
+        });
+    }
 
     std::vector<std::thread> pool;
     for (unsigned t = 0; t < threads; ++t) {
         pool.emplace_back([&, t] {
             ycsb::Rng rng(seed * 1315423911u + t + 1);
-            const std::uint64_t ops = total_ops / threads;
+            const std::uint64_t base_ops = total_ops / threads;
+            const std::uint64_t extra = total_ops % threads;
+            const std::uint64_t ops = base_ops + (t < extra ? 1 : 0);
+            const std::uint64_t start = t * base_ops + std::min<std::uint64_t>(t, extra);
             auto& lat = latencies[t];
             auto& kinds = by_kind[t];
             lat.reserve(ops);
@@ -185,7 +243,7 @@ int main(int argc, char** argv) {
                 const std::uint64_t op_start = now_ns();
                 if (workload == "load") {
                     // Partitioned sequential insert of the whole key space.
-                    const std::uint64_t index = t * ops + i;
+                    const std::uint64_t index = start + i;
                     if (!engine->put(ycsb::key_name(index), ycsb::make_value(rng, value_size))) {
                         err_put.fetch_add(1, std::memory_order_relaxed);
                     }
@@ -226,6 +284,8 @@ int main(int argc, char** argv) {
                 const std::uint64_t elapsed = now_ns() - op_start;
                 lat.push_back(elapsed);
                 kinds[kind].push_back(elapsed);
+                if (timeseries != nullptr)
+                    observed_ops.fetch_add(1, std::memory_order_relaxed);
             }
         });
     }
@@ -233,6 +293,16 @@ int main(int argc, char** argv) {
         th.join();
     }
     const double secs = static_cast<double>(now_ns() - wall_start) / 1e9;
+    if (timeseries != nullptr) {
+        {
+            std::lock_guard lock(sample_mutex);
+            sample_done = true;
+        }
+        sample_cv.notify_one();
+        sampler.join();
+        if (std::fclose(timeseries) != 0)
+            sample_output_failed = true;
+    }
     const double cpu = cpu_seconds();
     const std::uint64_t rss_steady = current_rss_bytes();
     const std::uint64_t rss_peak = peak_rss_bytes();
@@ -303,5 +373,9 @@ int main(int argc, char** argv) {
                 all.empty() ? 0.0 : cpu * usd_per_cpu_s * 1e6 / static_cast<double>(all.size()));
 
     engine->close();
+    if (sample_output_failed) {
+        std::fprintf(stderr, "timeseries output failed; measurement evidence is incomplete\n");
+        return 4;
+    }
     return errors == 0 ? 0 : 3;
 }
