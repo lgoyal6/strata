@@ -47,7 +47,7 @@ const char* arg_value(int argc, char** argv, const char* name, const char* fallb
 // Peak resident set of this process. ru_maxrss is bytes on Darwin and kilobytes on
 // Linux, which is a portability trap worth naming rather than a number worth guessing.
 std::uint64_t peak_rss_bytes() {
-    struct rusage ru{};
+    struct rusage ru {};
     getrusage(RUSAGE_SELF, &ru);
 #if defined(__APPLE__)
     return static_cast<std::uint64_t>(ru.ru_maxrss);
@@ -83,7 +83,7 @@ std::uint64_t current_rss_bytes() {
 // says how long you waited, CPU time says what you paid for, and on a machine shared
 // with other work the two are not the same number.
 double cpu_seconds() {
-    struct rusage ru{};
+    struct rusage ru {};
     getrusage(RUSAGE_SELF, &ru);
     return static_cast<double>(ru.ru_utime.tv_sec) +
            static_cast<double>(ru.ru_utime.tv_usec) / 1e6 +

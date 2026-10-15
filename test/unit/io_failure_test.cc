@@ -370,7 +370,7 @@ TEST(DbIoFailureTest, RealDiskFullRefusesWriteAndRetainsSyncedData) {
     const char* root = std::getenv("STRATA_DISK_FULL_TEST_DIR");
     if (root == nullptr)
         GTEST_SKIP() << "requires an owned size-capped tmpfs";
-    struct statvfs capacity{};
+    struct statvfs capacity {};
     ASSERT_EQ(::statvfs(root, &capacity), 0);
     // Refuse to fill an ordinary host filesystem or a large shared tmpfs.
     ASSERT_LE(static_cast<unsigned long long>(capacity.f_blocks) * capacity.f_frsize, 32ull << 20);
