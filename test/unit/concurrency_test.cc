@@ -89,12 +89,19 @@ TEST(CompactionSchedulerTest, BoundedQueueAppliesBackpressure) {
 
     std::promise<void> release;
     std::shared_future<void> gate(release.get_future());
-    std::atomic<int> ran{0};
+    auto ran = std::make_shared<std::atomic<int>>(0);
+    auto completed = std::make_shared<std::promise<void>>();
+    const std::future<void> all_done = completed->get_future();
+    const auto mark_done = [ran, completed] {
+        if (ran->fetch_add(1) + 1 == 4) {
+            completed->set_value();
+        }
+    };
 
     // Occupy the single worker.
-    ASSERT_TRUE(pool.submit([gate, &ran] {
+    ASSERT_TRUE(pool.submit([gate, mark_done] {
         gate.wait();
-        ran.fetch_add(1);
+        mark_done();
     }));
     // The worker may not have popped it yet; wait until it does so the queue
     // capacity below is exercised by queued (not running) tasks.
@@ -103,18 +110,19 @@ TEST(CompactionSchedulerTest, BoundedQueueAppliesBackpressure) {
     }
 
     // Fill the queue to capacity.
-    ASSERT_TRUE(pool.submit([&ran] { ran.fetch_add(1); }));
-    ASSERT_TRUE(pool.submit([&ran] { ran.fetch_add(1); }));
+    ASSERT_TRUE(pool.submit(mark_done));
+    ASSERT_TRUE(pool.submit(mark_done));
     ASSERT_EQ(pool.queued_count(), 2u);
 
     // Bounded: a full queue rejects non-blocking submission.
-    EXPECT_FALSE(pool.try_submit([&ran] { ran.fetch_add(1); }));
+    EXPECT_FALSE(pool.try_submit(mark_done));
 
     // Backpressure: blocking submit waits for a slot instead of growing the
     // queue.
     std::atomic<bool> submitted{false};
+    bool submit_accepted = false;
     std::thread submitter([&] {
-        ASSERT_TRUE(pool.submit([&ran] { ran.fetch_add(1); }));
+        submit_accepted = pool.submit(mark_done);
         submitted.store(true);
     });
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -123,9 +131,12 @@ TEST(CompactionSchedulerTest, BoundedQueueAppliesBackpressure) {
     release.set_value(); // worker drains: slots open, submit unblocks
     submitter.join();
     EXPECT_TRUE(submitted.load());
+    EXPECT_TRUE(submit_accepted);
 
+    const auto completion_status = all_done.wait_for(std::chrono::seconds(5));
     pool.shutdown();
-    EXPECT_EQ(ran.load(), 4);
+    EXPECT_EQ(completion_status, std::future_status::ready);
+    EXPECT_EQ(ran->load(), 4);
     EXPECT_EQ(pool.dropped_count(), 0u);
 }
 
