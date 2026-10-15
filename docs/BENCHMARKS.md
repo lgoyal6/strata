@@ -36,6 +36,17 @@ cmake --build --preset release
 ./bench/run_matrix.sh          # writes bench/results/ycsb.txt (committed)
 ```
 
+For a private cumulative counter trace, pass `--timeseries /absolute/fresh.tsv`
+to the benchmark. The file must not already exist. Each tab-separated row gives
+elapsed seconds, completed operation attempts, current RSS bytes, and the engine's
+native statistics, sampled about every 200 ms plus initial/final observations.
+Operation errors remain counted separately in the normal benchmark output.
+The optional sampler and atomic progress counter add measurement overhead, so
+compare runs with the same sampling setting. The latency percentiles still cover
+all measured operations; excluding initial time-series rows does not turn those
+percentiles into post-warmup latencies. Cumulative flush/compaction counters are
+activity measurements, not a direct gauge of pending compaction debt.
+
 ## 5. Baselines and fairness
 
 Matched between engines (everything else at each engine's defaults):
