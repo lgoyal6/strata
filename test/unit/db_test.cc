@@ -268,5 +268,29 @@ TEST_F(DbTest, StatsTrackWritesAndAmplification) {
     EXPECT_GE(stats.write_amplification(), 2.0); // WAL + flush at minimum
 }
 
+TEST_F(DbTest, StatsTrackCurrentTablesPointProbesAndSnapshots) {
+    for (int i = 0; i < 100; ++i) {
+        ASSERT_TRUE(put("key" + std::to_string(i), std::string(100, 'x')).ok());
+    }
+    ASSERT_TRUE(db_->flush().ok());
+
+    const DbStats after_flush = db_->stats();
+    EXPECT_GT(after_flush.current_sst_bytes, 0u);
+    EXPECT_EQ(after_flush.point_reads, 0u);
+    EXPECT_EQ(after_flush.sst_file_probes, 0u);
+
+    const Snapshot* snapshot = db_->get_snapshot();
+    ASSERT_NE(snapshot, nullptr);
+    EXPECT_EQ(db_->stats().snapshot_count, 1u);
+    EXPECT_EQ(get("key0", snapshot), std::string(100, 'x'));
+    const DbStats after_read = db_->stats();
+    EXPECT_EQ(after_read.point_reads, 1u);
+    EXPECT_GE(after_read.sst_file_probes, 1u);
+    EXPECT_EQ(after_read.compaction_debt_bytes, 0u);
+
+    db_->release_snapshot(snapshot);
+    EXPECT_EQ(db_->stats().snapshot_count, 0u);
+}
+
 } // namespace
 } // namespace strata

@@ -12,7 +12,7 @@ namespace {
 
 class RocksEngine final : public BenchEngine {
   public:
-    bool open(const std::string& dir, bool sync_writes, bool /*full_fsync*/,
+    bool open(const std::string& dir, bool sync_writes, bool /*full_fsync*/, bool pin_snapshot,
               std::string* err) override {
         // RocksDB on macOS always uses F_FULLFSYNC for sync writes.
         rocksdb::Options options;
@@ -40,6 +40,8 @@ class RocksEngine final : public BenchEngine {
             *err = s.ToString();
             return false;
         }
+        if (pin_snapshot)
+            snapshot_ = db_->GetSnapshot();
         return true;
     }
 
@@ -50,7 +52,9 @@ class RocksEngine final : public BenchEngine {
     }
 
     bool get(const std::string& key, std::string* value, bool* found) override {
-        const rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, value);
+        rocksdb::ReadOptions options;
+        options.snapshot = snapshot_;
+        const rocksdb::Status s = db_->Get(options, key, value);
         if (s.ok()) {
             *found = true;
             return true;
@@ -76,6 +80,12 @@ class RocksEngine final : public BenchEngine {
         return touched;
     }
 
+    std::uint64_t live_sst_bytes() override {
+        std::uint64_t bytes = 0;
+        db_->GetIntProperty("rocksdb.live-sst-files-size", &bytes);
+        return bytes;
+    }
+
     std::string stats_summary() override {
         // rocksdb.stats is maintained without a Statistics object, so the
         // timing runs stay overhead-free; write-amp numbers come from its
@@ -88,12 +98,17 @@ class RocksEngine final : public BenchEngine {
     }
 
     void close() override {
+        if (snapshot_ != nullptr) {
+            db_->ReleaseSnapshot(snapshot_);
+            snapshot_ = nullptr;
+        }
         db_.reset();
     }
 
   private:
     std::unique_ptr<rocksdb::DB> db_;
     bool sync_writes_ = false;
+    const rocksdb::Snapshot* snapshot_ = nullptr;
 };
 
 } // namespace

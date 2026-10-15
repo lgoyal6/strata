@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -12,7 +13,7 @@ struct BenchEngine {
     // full_fsync: on macOS, sync writes push through the drive cache
     // (F_FULLFSYNC) - RocksDB always does this for sync=true there, so the
     // apples-to-apples sync comparison needs strata in the same mode.
-    virtual bool open(const std::string& dir, bool sync_writes, bool full_fsync,
+    virtual bool open(const std::string& dir, bool sync_writes, bool full_fsync, bool pin_snapshot,
                       std::string* err) = 0;
     virtual bool put(const std::string& key, const std::string& value) = 0;
     // *found = false on a clean miss; returns false only on error.
@@ -20,6 +21,7 @@ struct BenchEngine {
     // Seek to start_key, iterate up to n entries. Returns entries touched
     // or -1 on error.
     virtual int scan(const std::string& start_key, int n) = 0;
+    virtual std::uint64_t live_sst_bytes() = 0;
     virtual std::string stats_summary() = 0; // human-readable, incl. write amp
     virtual void close() = 0;
 };

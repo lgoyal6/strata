@@ -20,6 +20,7 @@ namespace strata {
 struct TableReadStats {
     std::atomic<std::uint64_t> bloom_checks{0};
     std::atomic<std::uint64_t> bloom_skips{0};
+    std::atomic<std::uint64_t> sst_file_probes{0};
 };
 
 // Read side of one immutable SSTable. Index and filter blocks are pinned at

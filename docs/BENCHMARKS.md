@@ -36,16 +36,33 @@ cmake --build --preset release
 ./bench/run_matrix.sh          # writes bench/results/ycsb.txt (committed)
 ```
 
-For a private cumulative counter trace, pass `--timeseries /absolute/fresh.tsv`
+For a cumulative counter trace, pass `--timeseries /absolute/fresh.tsv`
 to the benchmark. The file must not already exist. Each tab-separated row gives
 elapsed seconds, completed operation attempts, current RSS bytes, and the engine's
 native statistics, sampled about every 200 ms plus initial/final observations.
 Operation errors remain counted separately in the normal benchmark output.
 The optional sampler and atomic progress counter add measurement overhead, so
-compare runs with the same sampling setting. The latency percentiles still cover
-all measured operations; excluding initial time-series rows does not turn those
-percentiles into post-warmup latencies. Cumulative flush/compaction counters are
-activity measurements, not a direct gauge of pending compaction debt.
+compare runs with the same sampling setting. The original latency percentiles
+cover all measured operations; excluding initial time-series rows does not
+change that. The benchmark reports separate post-warmup per-operation-kind
+latencies. Cumulative flush/compaction counters are activity measurements, not a
+direct gauge of pending compaction debt.
+
+The benchmark supports `--pin-snapshot 1`, which captures a snapshot
+after opening the preloaded database and holds it for the workload. Per-kind
+`postwarmup_*` percentiles include operations completed after the first 20% of
+completion ordinals. Strata reports point-read attempts, SST file probes,
+current-version SST bytes, active snapshots, and source-level bytes whose
+compaction score reaches its trigger. The debt gauge excludes overlapping
+destination-level inputs and is a source-level accounting measure, not a byte
+count of a scheduler queue. Probe amplification divides SST probes by all
+point-read attempts, including reads served by memory. Final space amplification
+divides on-disk SST bytes by current-version live SST bytes. Directory enumeration
+and the live-byte read are separate observations while compaction may continue,
+so the ratio is not an atomic snapshot; temporary outputs or obsolete files can
+make it exceed one. Set
+`STRATA_BENCH_COMPACTION_WORKERS` to select a Strata worker count for matched
+comparisons. Keep it fixed within matched runs.
 
 ## 5. Baselines and fairness
 

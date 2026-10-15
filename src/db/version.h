@@ -138,6 +138,10 @@ class VersionSet {
     // True when some level's score reaches the compaction threshold. No side
     // effects. Caller must hold the DB mutex (same rule as the pickers).
     bool needs_compaction() const;
+    // Bytes in source levels whose score currently triggers compaction.
+    // This is a direct level-byte gauge; it excludes overlapping destination
+    // files and work already removed from the current Version.
+    std::uint64_t compaction_debt_bytes() const;
 
     // Picks the best-scoring compaction whose input files are all outside
     // `busy_inputs` (files owned by an already-running compaction); false if

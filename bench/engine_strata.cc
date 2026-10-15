@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <cstdlib>
 #include <memory>
 #include <sstream>
 
 #include "bench/engine.h"
 
+#include "db/db_impl.h"
 #include "strata/db.h"
 #include "util/scan_probe.h"
 
@@ -11,7 +13,7 @@ namespace {
 
 class StrataEngine final : public BenchEngine {
   public:
-    bool open(const std::string& dir, bool sync_writes, bool full_fsync,
+    bool open(const std::string& dir, bool sync_writes, bool full_fsync, bool pin_snapshot,
               std::string* err) override {
         strata::Options options;
         // Bench-only override: a smaller memtable means more L0 files, which is
@@ -28,13 +30,22 @@ class StrataEngine final : public BenchEngine {
         options.fsync_policy =
             sync_writes ? strata::FsyncPolicy::kAlways : strata::FsyncPolicy::kNever;
         options.use_fullfsync = full_fsync;
-        strata::DB* db = nullptr;
-        const strata::Status s = strata::DB::open(options, dir, &db);
+        int workers = 1;
+        if (const char* configured = std::getenv("STRATA_BENCH_COMPACTION_WORKERS")) {
+            workers = std::atoi(configured);
+            if (workers < 1)
+                workers = 1;
+        }
+        auto impl =
+            std::make_unique<strata::DBImpl>(options, dir, strata::BackgroundConfig{workers, 4});
+        const strata::Status s = impl->init();
         if (!s.ok()) {
             *err = s.to_string();
             return false;
         }
-        db_.reset(db);
+        db_ = std::move(impl);
+        if (pin_snapshot)
+            snapshot_ = db_->get_snapshot();
         return true;
     }
 
@@ -43,7 +54,9 @@ class StrataEngine final : public BenchEngine {
     }
 
     bool get(const std::string& key, std::string* value, bool* found) override {
-        const strata::Status s = db_->get(strata::ReadOptions(), key, value);
+        strata::ReadOptions options;
+        options.snapshot = snapshot_;
+        const strata::Status s = db_->get(options, key, value);
         if (s.ok()) {
             *found = true;
             return true;
@@ -69,6 +82,10 @@ class StrataEngine final : public BenchEngine {
         return touched;
     }
 
+    std::uint64_t live_sst_bytes() override {
+        return db_->stats().current_sst_bytes;
+    }
+
     std::string stats_summary() override {
         const strata::DbStats s = db_->stats();
         std::ostringstream out;
@@ -87,6 +104,15 @@ class StrataEngine final : public BenchEngine {
                     ? static_cast<double>(s.block_cache_hits) /
                           static_cast<double>(s.block_cache_hits + s.block_cache_misses)
                     : 0.0);
+        out << " block_cache_hits=" << s.block_cache_hits
+            << " block_cache_misses=" << s.block_cache_misses;
+        out << " point_reads=" << s.point_reads << " sst_file_probes=" << s.sst_file_probes
+            << " compaction_debt_bytes=" << s.compaction_debt_bytes
+            << " current_sst_bytes=" << s.current_sst_bytes << " snapshots=" << s.snapshot_count;
+        if (s.point_reads > 0) {
+            out << " sst_probes_per_point_read="
+                << static_cast<double>(s.sst_file_probes) / static_cast<double>(s.point_reads);
+        }
 #ifdef STRATA_SCAN_PROBE
         {
             auto& c = strata::probe::counters();
@@ -112,11 +138,16 @@ class StrataEngine final : public BenchEngine {
     }
 
     void close() override {
+        if (snapshot_ != nullptr) {
+            db_->release_snapshot(snapshot_);
+            snapshot_ = nullptr;
+        }
         db_.reset();
     }
 
   private:
     std::unique_ptr<strata::DB> db_;
+    const strata::Snapshot* snapshot_ = nullptr;
 };
 
 } // namespace

@@ -73,6 +73,8 @@ class DBImpl final : public DB {
         std::atomic<std::uint64_t> flush_count{0};
         std::atomic<std::uint64_t> compaction_count{0};
         std::atomic<std::uint64_t> stall_micros{0};
+        std::atomic<std::uint64_t> point_reads{0};
+        std::atomic<std::uint64_t> snapshot_count{0};
     };
 
     // --- write path (docs/DESIGN.md §2.2) ---
